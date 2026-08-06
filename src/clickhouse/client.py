@@ -84,7 +84,7 @@ def _server_params() -> StdioServerParameters:
     env["CLICKHOUSE_ALLOW_DROP"] = "false"
     return StdioServerParameters(
         command="uv",
-        args=["run", "--with", "mcp-clickhouse", "--python", "3.10", "mcp-clickhouse"],
+        args=["run", "--with", "mcp-clickhouse[chdb]", "--python", "3.10", "mcp-clickhouse"],
         env=env,
     )
 
