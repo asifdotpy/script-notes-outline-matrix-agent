@@ -112,16 +112,24 @@ async def analyze(request: Request, file: UploadFile = File(...), title: str = F
 async def export_fdx_endpoint(payload: dict):
     """Export the Draft-2 revision matrix as a .fdx (Final Draft XML) file.
 
-    Format interchange only (Final Draft has no public plugin API). Payload:
-      {"revision_checklist": [...], "fdx_content": "<xml>...</xml>" (optional)}
-    If fdx_content is supplied, notes are injected at matching scene headings;
-    otherwise a standalone .fdx notes summary is generated.
+    Format interchange only (Final Draft has no public plugin API). Payload (one of):
+      {"revision_checklist": [...]}            -> structured checklist (preferred)
+      {"agent_text": "<free-text>"}            -> parsed into scenes via regex, then exported
+      {"revision_checklist": [...], "fdx_content": "<xml>"} -> inject into existing .fdx
+    Native <ScriptNote> elements are used (non-printing; no page-count change).
     """
-    from src.exporters.fdx import inject_matrix_notes_to_fdx, generate_standalone_fdx_notes_summary
+    from src.exporters.fdx import (
+        inject_matrix_notes_to_fdx,
+        generate_standalone_fdx_notes_summary,
+        parse_agent_text_to_checklist,
+    )
 
-    checklist = payload.get("revision_checklist", [])
+    checklist = payload.get("revision_checklist")
+    agent_text = payload.get("agent_text")
     fdx_raw = payload.get("fdx_content")
 
+    if not checklist and agent_text:
+        checklist = parse_agent_text_to_checklist(agent_text)
     if not checklist:
         raise HTTPException(status_code=400, detail="Revision checklist cannot be empty.")
 

@@ -36,9 +36,9 @@
     <pre id="result-text">{{ result }}</pre>
 
     <form action="/api/export/fdx" method="post" enctype="application/x-www-form-urlencoded"
-          onsubmit="this.querySelector('[name=revision_checklist]').value=JSON.stringify([{scene:'General',items:[document.querySelector('#result-text').innerText],conflicts:[]}]);">
-      <input type="hidden" name="revision_checklist">
-      <button type="submit">⬇ Export revision notes as .fdx</button>
+          onsubmit="this.querySelector('[name=agent_text]').value=document.querySelector('#result-text').innerText;">
+      <input type="hidden" name="agent_text">
+      <button type="submit">⬇ Export revision notes as .fdx (Final Draft notes)</button>
     </form>
   </div>
   {% endif %}
