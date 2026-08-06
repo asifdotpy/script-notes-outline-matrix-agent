@@ -34,34 +34,68 @@ def _s(v) -> str:
 
 
 def write_clickhouse(script_title: str, notes: list[dict]) -> dict:
-    """Persist a script's categorized notes into ClickHouse via mcp-clickhouse and
-    return live analytics. notes: list of {raw_text, note_type, character, scene_ref,
-    severity, scene_id?, scene_heading?}. This is the ACTIVE runtime ClickHouse step."""
+    """Persist a script's categorized notes + detected conflicts into ClickHouse via
+    mcp-clickhouse and return live relational analytics.
+    notes: list of {raw_text, note_type, character, scene_ref, severity, scene_id?,
+    scene_heading?, source_type?, source_author?}.
+    This is the ACTIVE runtime ClickHouse step (ClickHouse partner track)."""
     ch.init_schema()
-    sid = ch.insert_script(_s(script_title), "mixed_feedback")
+    project_id = ch.slugify_project(script_title)
+    draft_version = 1
     for n in notes or []:
         raw = _s(n.get("raw_text"))
         if not raw.strip():
             continue  # skip empties the model may emit
-        nid = ch.insert_note(
-            sid, raw, _s(n.get("note_type", "other")),
-            _s(n.get("character")), _s(n.get("scene_ref")), _s(n.get("severity", "medium")),
+        scene_num = 0
+        for key in ("scene_number", "scene_ref", "scene_id"):
+            v = _s(n.get(key))
+            if v.isdigit():
+                scene_num = int(v)
+                break
+        ch.insert_note(
+            project_id=project_id,
+            draft_version=draft_version,
+            source_type=_s(n.get("source_type", "unknown")),
+            source_author=_s(n.get("source_author", "unknown")),
+            scene_number=scene_num,
+            scene_heading=_s(n.get("scene_heading")),
+            category=_s(n.get("note_type", "Other")),
+            severity=_s(n.get("severity", "Minor")),
+            raw_note_text=raw,
         )
-        scene_id = _s(n.get("scene_id"))
-        if scene_id:
-            ch.run_query(
-                "INSERT INTO note_scene_map (id, note_id, script_id, scene_id, scene_heading) "
-                f"VALUES ('{ch.new_id()}', '{nid}', '{sid}', "
-                f"'{scene_id.replace(chr(39), chr(39)*2)}', "
-                f"'{_s(n.get('scene_heading')).replace(chr(39), chr(39)*2)}')"
-            )
-    return {"script_id": sid, "analytics": ch.analytics_for(sid)}
+
+    # Persist detected conflicts so Query 1's LEFT JOIN returns non-zero conflict counts.
+    detected = detect_conflicts(notes)
+    for c in detected:
+        na = notes[c["note_a_idx"]]
+        nb = notes[c["note_b_idx"]]
+        # scene number from either note (prefer one that has it)
+        scene_num = 0
+        for v in (_s(na.get("scene_ref")), _s(na.get("scene_id")),
+                  _s(nb.get("scene_ref")), _s(nb.get("scene_id"))):
+            if v.isdigit():
+                scene_num = int(v)
+                break
+        ch.insert_conflict(
+            project_id=project_id,
+            draft_version=draft_version,
+            scene_number=scene_num,
+            stakeholder_a=_s(na.get("source_author", "Source A")),
+            note_a=_s(na.get("raw_text"))[:500],
+            stakeholder_b=_s(nb.get("source_author", "Source B")),
+            note_b=_s(nb.get("raw_text"))[:500],
+            conflict_type="Unspecified",
+        )
+
+    return {"project_id": project_id, "draft_version": draft_version,
+            "analytics": ch.analytics_for(project_id, draft_version)}
 
 
-def query_analytics(script_id: str) -> dict:
-    """Return live ClickHouse analytics for a script: note-category frequencies,
-    conflict count, scene coverage. Demonstrates ClickHouse as an analytical engine."""
-    return ch.analytics_for(script_id)
+def query_analytics(project_id: str, draft_version: int = 1) -> dict:
+    """Return live ClickHouse relational analytics for a project: scene revision density,
+    stakeholder disagreement, and draft progress. Demonstrates ClickHouse as an
+    analytical engine (ClickHouse partner track)."""
+    return ch.analytics_for(project_id, draft_version)
 
 
 def detect_conflicts(notes: list[dict]) -> list[dict]:

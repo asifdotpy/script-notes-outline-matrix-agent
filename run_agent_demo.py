@@ -54,18 +54,18 @@ def main() -> int:
             parts=[types.Part(text=f"Title: {title}\nFeedback file lines:\n" + "\n".join(raw_lines))],
         )
         answer = ""
-        script_id = None
+        project_id = None
         for event in runner.run(session_id=session.id, user_id="demo", new_message=content):
             if not event.content:
                 continue
             for part in event.content.parts or []:
                 if getattr(part, "text", None):
                     answer += part.text
-                # Capture the script_id our write_clickhouse tool persisted.
+                # Capture the project_id our write_clickhouse tool persisted.
                 fr = getattr(part, "function_response", None)
-                if fr and isinstance(fr.response, dict) and fr.response.get("script_id"):
-                    script_id = fr.response["script_id"]
-        return {"text": answer, "script_id": script_id}
+                if fr and isinstance(fr.response, dict) and fr.response.get("project_id"):
+                    project_id = fr.response["project_id"]
+        return {"text": answer, "project_id": project_id}
 
     import time
 
@@ -73,13 +73,13 @@ def main() -> int:
 
     from src.clickhouse import client as ch
 
-    def _fallback_summary(script_id: str) -> str:
-        """Render a real summary from persisted ClickHouse data if the model's
-        final text was empty (ADK sometimes ends a turn on a tool call)."""
-        a = ch.analytics_for(script_id)
-        lines = [f"# notes by category: {a['by_type']}",
-                 f"# conflicts flagged: {a['conflict_count']}",
-                 f"# scenes covered: {a['scene_count']}",
+    def _fallback_summary(project_id: str) -> str:
+        """Render a real summary from persisted ClickHouse relational analytics if the
+        model's final text was empty (ADK sometimes ends a turn on a tool call)."""
+        a = ch.analytics_for(project_id)
+        lines = [f"# scenes with notes: {len(a['scene_density'])}",
+                 f"# stakeholder disagreement rows: {len(a['stakeholder_disagreement'])}",
+                 f"# draft progress rows: {len(a['draft_progress'])}",
                  "",
                  "Draft-2 revision plan (persisted in ClickHouse via mcp-clickhouse):",
                  "See the live analytics panel / notes_matrix view for the full matrix."]
@@ -94,8 +94,8 @@ def main() -> int:
             if answer.strip():
                 break
             # Model ended on a tool call (no text). Use the persisted data we captured.
-            if res.get("script_id"):
-                answer = _fallback_summary(res["script_id"])
+            if res.get("project_id"):
+                answer = _fallback_summary(res["project_id"])
                 break
             last_err = "empty completion"
         except genai_errors.ServerError as exc:  # 503 transient

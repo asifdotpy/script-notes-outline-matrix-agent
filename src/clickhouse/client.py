@@ -153,56 +153,55 @@ def new_id() -> str:
     return str(uuid.uuid4())
 
 
-def insert_script(title: str, source_type: str) -> str:
-    sid = new_id()
-    run_query(
-        "INSERT INTO scripts (id, title, source_type) VALUES "
-        f"('{sid}', '{title.replace(chr(39), chr(39) * 2)}', '{source_type}')"
-    )
-    return sid
+def slugify_project(title: str) -> str:
+    """Derive a stable project_id from a script title, e.g. 'The Matrix' -> 'the-matrix'."""
+    import re
+    slug = re.sub(r"[^a-z0-9]+", "-", (title or "untitled").lower()).strip("-")
+    return slug or "untitled"
 
 
 def insert_note(
-    script_id: str, raw_text: str, note_type: str,
-    character: str = "", scene_ref: str = "", severity: str = "medium",
+    project_id: str, draft_version: int,
+    source_type: str, source_author: str,
+    scene_number: int, scene_heading: str,
+    category: str, severity: str, raw_note_text: str,
 ) -> str:
     nid = new_id()
     esc = lambda s: s.replace(chr(39), chr(39) * 2)
     run_query(
-        "INSERT INTO notes (id, script_id, raw_text, note_type, character, scene_ref, severity) "
-        f"VALUES ('{nid}', '{script_id}', '{esc(raw_text)}', '{note_type}', "
-        f"'{esc(character)}', '{esc(scene_ref)}', '{severity}')"
+        "INSERT INTO script_notes_matrix.notes_raw "
+        "(note_id, project_id, draft_version, source_type, source_author, "
+        " scene_number, scene_heading, category, severity, raw_note_text) "
+        f"VALUES ('{nid}', '{esc(project_id)}', {int(draft_version)}, '{esc(source_type)}', "
+        f"'{esc(source_author)}', {int(scene_number)}, '{esc(scene_heading)}', "
+        f"'{esc(category)}', '{esc(severity)}', '{esc(raw_note_text)}')"
     )
     return nid
 
 
-def insert_conflict(script_id: str, note_a_id: str, note_b_id: str, description: str) -> str:
+def insert_conflict(
+    project_id: str, draft_version: int, scene_number: int,
+    stakeholder_a: str, note_a: str,
+    stakeholder_b: str, note_b: str,
+    conflict_type: str = "Unspecified",
+) -> str:
     cid = new_id()
     esc = lambda s: s.replace(chr(39), chr(39) * 2)
     run_query(
-        "INSERT INTO conflicts (id, script_id, note_a_id, note_b_id, description) "
-        f"VALUES ('{cid}', '{script_id}', '{note_a_id}', '{note_b_id}', '{esc(description)}')"
+        "INSERT INTO script_notes_matrix.notes_conflicts "
+        "(conflict_id, project_id, draft_version, scene_number, stakeholder_a, note_a, "
+        " stakeholder_b, note_b, conflict_type) "
+        f"VALUES ('{cid}', '{esc(project_id)}', {int(draft_version)}, {int(scene_number)}, "
+        f"'{esc(stakeholder_a)}', '{esc(note_a)}', '{esc(stakeholder_b)}', '{esc(note_b)}', "
+        f"'{esc(conflict_type)}')"
     )
     return cid
 
 
-def analytics_for(script_id: str) -> dict:
-    """Live analytics over persisted data — the load-bearing ClickHouse story."""
-    by_type = run_query(
-        f"SELECT note_type, count() AS n FROM notes WHERE script_id='{script_id}' "
-        "GROUP BY note_type ORDER BY n DESC"
-    )
-    conflict_count = run_query(
-        f"SELECT count() AS n FROM conflicts WHERE script_id='{script_id}'"
-    )
-    scene_count = run_query(
-        f"SELECT countDistinct(scene_id) AS n FROM note_scene_map WHERE script_id='{script_id}'"
-    )
-    return {
-        "by_type": by_type,
-        "conflict_count": conflict_count[0]["n"] if conflict_count else 0,
-        "scene_count": scene_count[0]["n"] if scene_count else 0,
-    }
+def analytics_for(project_id: str, draft_version: int = 1) -> dict:
+    """Live relational analytics over persisted notes + conflicts — the ClickHouse story."""
+    from src.analytics.queries import project_analytics
+    return project_analytics(project_id, draft_version)
 
 
 if __name__ == "__main__":

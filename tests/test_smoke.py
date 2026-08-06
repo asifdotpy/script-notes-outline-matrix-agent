@@ -1,7 +1,8 @@
-"""Smoke test: schema + persistence + analytics on embedded chDB (free, no cloud).
+"""Smoke test: schema + persistence + relational analytics on embedded chDB (free, no cloud).
 
-Verifies the ClickHouse-active-runtime path works end to end without any cloud
-account, and that flipping to Cloud requires only env vars (handled in client.py).
+Verifies the ClickHouse-active-runtime path works end to end without any cloud account,
+and that the three analytical queries (scene density, stakeholder disagreement, draft
+progress) return sane rows over persisted notes + conflicts.
 """
 import os
 import sys
@@ -13,36 +14,51 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 # Force embedded chDB so the test needs no ClickHouse Cloud account/credits.
-# CLICKHOUSE_ENABLED=false makes mcp-clickhouse register the chDB tools
-# (run_chdb_select_query) instead of the real-client run_query. CHDB_DATA_PATH must be a
-# file path (not ':memory:') so DDL persists across calls.
 os.environ.setdefault("CHDB_ENABLED", "true")
 os.environ.setdefault("CLICKHOUSE_ENABLED", "false")
 os.environ.setdefault("CHDB_DATA_PATH", "/tmp/agentic_cinema_chdb_test")
 os.environ["CLICKHOUSE_ALLOW_WRITE_ACCESS"] = "true"
 
 
-def test_schema_and_analytics():
+def test_schema_and_relational_analytics():
     from src.clickhouse import client as ch
+    from src.analytics import queries
 
     ch.init_schema()
+    project_id = ch.slugify_project("The Tunnel — Draft 1")  # -> 'the-tunnel-draft-1'
+    assert project_id == "the-tunnel-draft-1"
 
-    sid = ch.insert_script("The Tunnel — Draft 1", "mixed_feedback")
-    n1 = ch.insert_note(sid, "Cut two pages from the intro", "pacing", "", "1", "high")
-    n2 = ch.insert_note(sid, "Expand the dinner scene", "character", "Maya/Daniel", "5", "high")
-    n3 = ch.insert_note(sid, "Fix missing scene numbers", "format", "", "", "low")
-    ch.insert_conflict(sid, n1, n2, "Conflicting guidance on scene length/pace.")
-    # Map a note to its scene (the agent's write_clickhouse step populates note_scene_map).
-    ch.run_query(
-        f"INSERT INTO note_scene_map (id, note_id, script_id, scene_id, scene_heading) "
-        f"VALUES ('{ch.new_id()}', '{n2}', '{sid}', '5', 'INT. DINING ROOM - NIGHT')"
-    )
+    # Persist notes across two sources, one with a conflict on scene 5.
+    ch.insert_note(project_id, 1, "producer_email", "Producer", 5, "INT. DINING ROOM - NIGHT",
+                   "Character", "Critical", "Expand the dinner scene between Maya and Daniel.")
+    ch.insert_note(project_id, 1, "agent_email", "Manager", 5, "INT. DINING ROOM - NIGHT",
+                   "Character", "Major", "Tighten the dinner scene dialogue.")
+    ch.insert_note(project_id, 1, "pdf_coverage", "Coverage", 12, "EXT. ROOFTOP - DAY",
+                   "Structure", "Minor", "The rooftop scene works well.")
+    ch.insert_conflict(project_id, 1, 5, "Producer", "Expand the dinner scene",
+                       "Manager", "Tighten the dinner scene dialogue", "Character Arc")
 
-    analytics = ch.analytics_for(sid)
-    assert analytics["conflict_count"] >= 1
-    assert analytics["scene_count"] >= 1
-    types = {row["note_type"] for row in analytics["by_type"]}
-    assert "pacing" in types and "format" in types
+    # Query 1: scene density + conflict rate (scene 5 should show 2 notes + 1 conflict).
+    density = queries.scene_density_and_conflicts(project_id, 1)
+    by_scene = {r["scene_number"]: r for r in density}
+    assert by_scene[5]["total_notes"] == 2
+    assert by_scene[5]["conflict_count"] == 1
+
+    # Query 2: stakeholder disagreement by source/category.
+    disc = queries.stakeholder_disagreement(project_id, 1)
+    assert len(disc) >= 3
+    assert any(r["source_type"] == "producer_email" for r in disc)
+
+    # Query 3: draft progress rollup.
+    prog = queries.draft_progress(project_id)
+    assert prog[0]["draft_version"] == 1
+    assert prog[0]["affected_scenes"] == 2  # scenes 5 and 12
+    assert prog[0]["total_notes"] == 3
+    assert prog[0]["total_reviewers"] == 3  # Producer, Manager, Coverage
+
+    # Bundle used by the agent/web response.
+    bundled = ch.analytics_for(project_id, 1)
+    assert bundled["scene_density"] and bundled["stakeholder_disagreement"] and bundled["draft_progress"]
 
 
 def test_parse_email():
