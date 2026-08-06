@@ -31,6 +31,20 @@ python -m src.clickhouse.client   # applies schema, prints OK
 uvicorn src.web.app:app --port 8080   # open http://localhost:8080
 ```
 
+### Gemini / ADK (the reasoning layer)
+The agent uses **Gemini via Google ADK** (the only permitted AI vendor per the rules).
+Set a key in `.env` (gitignored — never commit it):
+```bash
+GEMINI_API_KEY=...      # or GOOGLE_API_KEY
+GOOGLE_GENAI_USE_VERTEXAI=false   # use the Gemini Developer API (not Vertex)
+```
+> Free-tier Gemini keys have a small daily request quota (e.g. ~20 req/day for
+> `gemini-2.5-flash`). The agent makes several calls per run (categorize → conflicts →
+> checklist → persist), so the quota is consumed quickly. If you hit `429 RESOURCE_EXHAUSTED`,
+> wait for the daily reset or enable billing on the key's Google Cloud project. The pipeline is
+> verified working; `run_agent_demo.py tests/sample_feedback.eml` exercises the full flow.
+> Without a key the ingestion + ClickHouse layers still run (web UI shows an agent-unavailable note).
+
 ## Live submission (ClickHouse Cloud)
 In `.env`, comment out the chDB block and set `CLICKHOUSE_HOST/PORT/USER/PASSWORD/SECURE`
 to your ClickHouse Cloud service (the `mcp-clickhouse` server picks these up automatically).

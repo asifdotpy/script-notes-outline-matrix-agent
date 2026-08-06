@@ -6,12 +6,21 @@ launched as a subprocess (stdio transport) and queried over MCP. This works with
 both ClickHouse Cloud (set CLICKHOUSE_* env) and embedded chDB (CHDB_ENABLED=true),
 so development runs free and the live submission flips to Cloud via env vars only.
 
-The schema (schema.sql) is idempotent (CREATE ... IF NOT EXISTS) and applied on init.
+Concurrency model
+-----------------
+The MCP stdio client is async. ADK agent tools and FastAPI handlers may call
+`run_query` from *within* an already-running event loop (ADK runs async). To avoid
+nested-event-loop crashes ("Event loop is closed", leaked coroutines), this module
+owns ONE dedicated background event loop on a private thread for the lifetime of the
+process. `run_query` submits coroutines to that loop via `run_coroutine_threadsafe`
+and blocks on the returned future — safe from any caller context (sync or async).
 """
 from __future__ import annotations
 
 import asyncio
+import json
 import os
+import threading
 import uuid
 from pathlib import Path
 
@@ -19,6 +28,30 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 SCHEMA_PATH = Path(__file__).parent / "schema.sql"
+
+# --- dedicated loop + lock for the MCP stdio client (process-lifetime) ---
+_LOOP: asyncio.AbstractEventLoop | None = None
+_LOOP_THREAD: threading.Thread | None = None
+_LOOP_LOCK = threading.Lock()
+
+
+def _ensure_loop() -> asyncio.AbstractEventLoop:
+    """Start (once) a private event loop on a background thread."""
+    global _LOOP, _LOOP_THREAD
+    with _LOOP_LOCK:
+        if _LOOP is not None and not _LOOP.is_closed():
+            return _LOOP
+        loop = asyncio.new_event_loop()
+
+        def _run() -> None:
+            asyncio.set_event_loop(loop)
+            loop.run_forever()
+
+        t = threading.Thread(target=_run, daemon=True)
+        t.start()
+        _LOOP = loop
+        _LOOP_THREAD = t
+        return loop
 
 
 def _server_params() -> StdioServerParameters:
@@ -69,17 +102,17 @@ async def _run_query(sql: str) -> list[dict]:
         async with ClientSession(read, write) as session:
             await session.initialize()
             result = await session.call_tool(_query_tool_name(), {"query": sql})
-            # mcp-clickhouse's run_query returns JSON text of shape
-            # {"columns": [...], "rows": [[...], ...]} (see mcp_server.py run_query).
-            # Normalize to a list of dicts keyed by column name.
-            import json
-
+            # mcp-clickhouse returns JSON text. run_query/run_chdb_select_query return a
+            # JSON string of shape {"columns": [...], "rows": [[...], ...]} OR an error
+            # dict {"status": "error", "message": "..."} OR a list. Normalize to rows.
             for item in result.content:
                 if getattr(item, "type", None) == "text":
                     try:
                         data = json.loads(item.text)
                     except Exception:
                         return [{"text": item.text}]
+                    if isinstance(data, dict) and data.get("status") == "error":
+                        raise RuntimeError(f"ClickHouse query failed: {data.get('message')}")
                     if isinstance(data, dict) and "columns" in data and "rows" in data:
                         cols = data["columns"]
                         return [dict(zip(cols, row)) for row in data["rows"]]
@@ -90,8 +123,15 @@ async def _run_query(sql: str) -> list[dict]:
 
 
 def run_query(sql: str) -> list[dict]:
-    """Synchronous wrapper used by the agent tools and web app."""
-    return asyncio.run(_run_query(sql))
+    """Synchronous, caller-agnostic query runner.
+
+    Submits the async MCP call to the private background loop and blocks on the
+    future, so it is safe to call from sync functions, ADK async tools, and
+    FastAPI handlers alike (no nested-loop crashes).
+    """
+    loop = _ensure_loop()
+    future = asyncio.run_coroutine_threadsafe(_run_query(sql), loop)
+    return future.result()
 
 
 def init_schema() -> None:

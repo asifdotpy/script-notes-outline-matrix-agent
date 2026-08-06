@@ -33,6 +33,10 @@ Pipeline:
    scene-by-scene checklist. Offer the live ClickHouse analytics from query_analytics.
 
 Always call write_clickhouse before finishing so the data is persisted and analyzable.
+After write_clickhouse returns analytics, you MUST reply with a final plain-text summary
+to the user — never end your turn on a tool call. Your final message should include:
+# notes, # conflicts flagged, top note categories, and the scene-by-scene checklist.
+Offer the live ClickHouse analytics from query_analytics.
 Be terse and structured in your final answer. Do not invent feedback that wasn't in
 the source files.
 """

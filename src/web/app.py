@@ -66,14 +66,31 @@ async def analyze(request: Request, file: UploadFile = File(...), title: str = F
 
         agent = _get_agent()
         runner = InMemoryRunner(agent=agent, app_name="script_matrix")
-        session = runner.session_service.create_session(app_name="script_matrix", user_id="web")
-        content = types.Content(
-            role="user",
-            parts=[types.Part(text=f"Title: {title}\nFeedback file lines:\n" + "\n".join(raw_lines))],
-        )
-        events = runner.run(session_id=session.id, user_id="web", new_message=content)
-        answer = "".join(
-            p.text for e in events for p in (e.content.parts or []) if getattr(p, "text", None)
+
+        def _run_agent() -> str:
+            import asyncio
+
+            async def _go() -> str:
+                session = await runner.session_service.create_session(
+                    app_name="script_matrix", user_id="web"
+                )
+                content = types.Content(
+                    role="user",
+                    parts=[types.Part(text=f"Title: {title}\nFeedback file lines:\n" + "\n".join(raw_lines))],
+                )
+                out = ""
+                for event in runner.run(session_id=session.id, user_id="web", new_message=content):
+                    if event.content:
+                        for p in event.content.parts or []:
+                            if getattr(p, "text", None):
+                                out += p.text
+                return out
+
+            return asyncio.run(_go())
+
+        answer = _run_agent() or (
+            f"[agent returned no text; ingestion succeeded ({len(raw_lines)} raw note "
+            f"lines from {'PDF' if suffix == '.pdf' else 'email'}). See ClickHouse analytics.]"
         )
     except Exception as exc:  # noqa: BLE001 — surface agent/deps failure to the UI
         answer = (

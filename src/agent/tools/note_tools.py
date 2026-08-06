@@ -15,8 +15,8 @@ from google.adk.tools import FunctionTool
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from ingestion.pdf_parser import parse_pdf, parse_email
-from clickhouse import client as ch
+from src.ingestion.pdf_parser import parse_pdf, parse_email
+from src.clickhouse import client as ch
 
 
 def parse_notes(file_path: str) -> list[str]:
@@ -28,23 +28,32 @@ def parse_notes(file_path: str) -> list[str]:
     return parse_email(p)
 
 
+def _s(v) -> str:
+    """Coerce any value to a safe string (None -> '') for DB insertion."""
+    return "" if v is None else str(v)
+
+
 def write_clickhouse(script_title: str, notes: list[dict]) -> dict:
     """Persist a script's categorized notes into ClickHouse via mcp-clickhouse and
     return live analytics. notes: list of {raw_text, note_type, character, scene_ref,
     severity, scene_id?, scene_heading?}. This is the ACTIVE runtime ClickHouse step."""
     ch.init_schema()
-    sid = ch.insert_script(script_title, "mixed_feedback")
-    for n in notes:
+    sid = ch.insert_script(_s(script_title), "mixed_feedback")
+    for n in notes or []:
+        raw = _s(n.get("raw_text"))
+        if not raw.strip():
+            continue  # skip empties the model may emit
         nid = ch.insert_note(
-            sid, n.get("raw_text", ""), n.get("note_type", "other"),
-            n.get("character", ""), n.get("scene_ref", ""), n.get("severity", "medium"),
+            sid, raw, _s(n.get("note_type", "other")),
+            _s(n.get("character")), _s(n.get("scene_ref")), _s(n.get("severity", "medium")),
         )
-        if n.get("scene_id"):
+        scene_id = _s(n.get("scene_id"))
+        if scene_id:
             ch.run_query(
                 "INSERT INTO note_scene_map (id, note_id, script_id, scene_id, scene_heading) "
                 f"VALUES ('{ch.new_id()}', '{nid}', '{sid}', "
-                f"'{str(n['scene_id']).replace(chr(39), chr(39)*2)}', "
-                f"'{str(n.get('scene_heading','')).replace(chr(39), chr(39)*2)}')"
+                f"'{scene_id.replace(chr(39), chr(39)*2)}', "
+                f"'{_s(n.get('scene_heading')).replace(chr(39), chr(39)*2)}')"
             )
     return {"script_id": sid, "analytics": ch.analytics_for(sid)}
 
