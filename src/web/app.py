@@ -13,8 +13,8 @@ import os
 import sys
 from pathlib import Path
 
-from fastapi import FastAPI, Request, UploadFile, File, Form
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, Request, UploadFile, File, Form, HTTPException
+from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -105,6 +105,38 @@ async def analyze(request: Request, file: UploadFile = File(...), title: str = F
         request=request,
         name="index.html",
         context={"request": request, "result": answer, "title": title, "n_lines": len(raw_lines)},
+    )
+
+
+@app.post("/api/export/fdx")
+async def export_fdx_endpoint(payload: dict):
+    """Export the Draft-2 revision matrix as a .fdx (Final Draft XML) file.
+
+    Format interchange only (Final Draft has no public plugin API). Payload:
+      {"revision_checklist": [...], "fdx_content": "<xml>...</xml>" (optional)}
+    If fdx_content is supplied, notes are injected at matching scene headings;
+    otherwise a standalone .fdx notes summary is generated.
+    """
+    from src.exporters.fdx import inject_matrix_notes_to_fdx, generate_standalone_fdx_notes_summary
+
+    checklist = payload.get("revision_checklist", [])
+    fdx_raw = payload.get("fdx_content")
+
+    if not checklist:
+        raise HTTPException(status_code=400, detail="Revision checklist cannot be empty.")
+
+    try:
+        if fdx_raw:
+            xml_out = inject_matrix_notes_to_fdx(fdx_raw, checklist)
+        else:
+            xml_out = generate_standalone_fdx_notes_summary(checklist)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    return Response(
+        content=xml_out,
+        media_type="application/xml",
+        headers={"Content-Disposition": "attachment; filename=Draft2_Revision_Matrix.fdx"},
     )
 
 
