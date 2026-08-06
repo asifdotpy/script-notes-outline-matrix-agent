@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+credentials.json
+*.key
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+
+# Build
+__pycache__/
+*.so
+.pytest_cache/
+
+# Local data / uploads
+uploads/
+data/
+*.pdf
+*.eml
+
+# Reference vendor repos (kept out of the submission)
+references/

@@ -1,0 +1,15 @@
+# Cloud Run deploy for the web surface (src/web/app.py).
+# Build-free: run from the repo root.
+#
+#   gcloud run deploy script-matrix-web \
+#     --source . \
+#     --platform managed \
+#     --region us-central1 \
+#     --allow-unauthenticated \
+#     --set-env-vars CLICKHOUSE_MCP_AUTH_DISABLED=true
+#
+# For the live ClickHouse Cloud submission, also set (via Secret Manager / --set-env-vars):
+#   CLICKHOUSE_HOST, CLICKHOUSE_PORT=8443, CLICKHOUSE_USER, CLICKHOUSE_PASSWORD, CLICKHOUSE_SECURE=true
+# and CLICKHOUSE_ALLOW_WRITE_ACCESS=true (destructive ops stay off).
+#
+# Dockerfile note: use python:3.10-slim, pip install -r requirements.txt, CMD uvicorn src.web.app:app --host 0.0.0.0 --port 8080
