@@ -28,5 +28,8 @@ data/
 *.pdf
 *.eml
 
+# Hermes local planning state (plans, project cache) — not submission code
+.hermes/
+
 # Reference vendor repos (kept out of the submission)
 references/
