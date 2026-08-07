@@ -21,15 +21,20 @@ credentials.json
 __pycache__/
 *.so
 .pytest_cache/
+build/
 
 # Local data / uploads
 uploads/
 data/
 *.pdf
 *.eml
+# Keep the demo/test fixture (the report + run_agent_demo.py depend on it)
+!tests/sample_feedback.eml
 
 # Hermes local planning state (plans, project cache) — not submission code
 .hermes/
 
 # Reference vendor repos (kept out of the submission)
 references/
+.sa-key.json
+*.sa-key.json
