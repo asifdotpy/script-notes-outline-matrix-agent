@@ -81,6 +81,49 @@ fix for Draft 2" list — with everything saved in a real database you can analy
 - **Deploy** (`deploy/`): `deploy_agent.py` deploys the agent to Vertex AI Agent Engine;
   `cloud_run.yaml` documents the Cloud Run deploy for the web surface.
 
+### System diagram (technical)
+
+```
+┌──────────────┐        POST /analyze (file, title)        ┌─────────────────────────┐
+│  Web client  │ ────────────────────────────────────────▶ │  src/web/app.py (FastAPI) │
+│ (browser /   │                                            │   • parse upload          │
+│  Cloud Run)  │ ◀────────── HTML result + .fdx ─────────── │   • call agent (prod/dev) │
+└──────────────┘                                            └───────────┬─────────────┘
+                                                                     │ stream_query (prod)
+                                                                     │  or InMemoryRunner (dev)
+                                                                     ▼
+                                                       ┌──────────────────────────────┐
+                                                       │  ADK Agent (Gemini 2.5 Flash) │
+                                                       │  src/agent/agent.py            │
+                                                       │   build_agent() → tools:       │
+                                                       │    • categorize_note           │
+                                                       │    • detect_conflicts          │
+                                                       │    • write_clickhouse ★         │
+                                                       └───────────────┬────────────────┘
+                                                                     │  ★ via MCP (stdio)
+                                                                     ▼
+                                                       ┌──────────────────────────────┐
+                                                       │  mcp-clickhouse server        │
+                                                       │  src/clickhouse/client.py      │
+                                                       │   dev: chDB  │  prod: ClickHouse│
+                                                       │              Cloud (8443/TLS)   │
+                                                       └───────────────┬────────────────┘
+                                                                     │ SQL
+                                                                     ▼
+                                                       ┌──────────────────────────────┐
+                                                       │  ClickHouse  (runtime store)  │
+                                                       │   notes_raw                   │
+                                                       │   notes_conflicts             │
+                                                       │   + relational analytics views │
+                                                       └──────────────────────────────┘
+
+Deploy topology:
+  Local dev : FastAPI ──in-process ADK runner──▶ mcp-clickhouse (chDB)
+  Prod      : FastAPI (Cloud Run) ──AGENT_ENGINE_ID──▶ Vertex AI Agent Engine
+                                                   (same agent) ──▶ mcp-clickhouse ──▶ ClickHouse Cloud
+  Auth      : Vertex AI via Application Default Credentials (SA key / gcloud ADC); no API key.
+```
+
 ## Quickstart (local, free — no cloud account needed)
 
 ```bash
