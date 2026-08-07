@@ -15,6 +15,44 @@ An agentic tool for screenwriters that ingests *external, unstructured* feedback
 Rules-compliant: automates admin/planning only — it **does not** auto-write creative script text.
 Built on **Gemini via Google ADK on Vertex AI (Agent Engine)**; ClickHouse is used at **runtime** (not just named).
 
+## How it works (at a glance)
+
+```
+   Producer email              PDF coverage                Script (Final Draft)
+   or agent notes               report                       / .fdx
+        │                           │                            │
+        ▼                           ▼                            ▼
+   ┌──────────────────────────────────────────────────────────┐
+   │  1. INGEST   Read the messy, contradictory feedback        │
+   │             (PDFs + emails) — not just app comments         │
+   └──────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+   ┌──────────────────────────────────────────────────────────┐
+   │  2. THE AGENT (Gemini on Google Cloud Vertex AI)           │
+   │     • Tags every note: Structure / Character / Dialogue /  │
+   │       Pacing / Logic / Format + scene + severity           │
+   │     • Flags conflicts: "cut the intro" ⚠ "let it breathe"  │
+   │     • Builds a scene-by-scene Draft-2 revision checklist   │
+   └──────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+   ┌──────────────────────────────────────────────────────────┐
+   │  3. STORE & ANALYZE   ClickHouse (live database)           │
+   │     Every note + conflict saved; charts show what to fix   │
+   └──────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+   ┌──────────────────────────────────────────────────────────┐
+   │  4. YOU GET   A clear checklist + export back to .fdx      │
+   │             (so the writer knows exactly what to change)   │
+   └──────────────────────────────────────────────────────────┘
+```
+
+**In one sentence for non-technical readers:** you drop in your notes and feedback,
+the AI sorts them, spots where people disagree, and hands you a prioritized "what to
+fix for Draft 2" list — with everything saved in a real database you can analyze.
+
 ## What it does (features)
 
 - **Ingestion of external feedback** — `pdfplumber` for PDF coverage reports, an email parser
