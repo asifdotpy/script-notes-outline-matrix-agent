@@ -24,9 +24,6 @@ import threading
 import uuid
 from pathlib import Path
 
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
-
 SCHEMA_PATH = Path(__file__).parent / "schema.sql"
 
 # --- dedicated loop + lock for the MCP stdio client (process-lifetime) ---
@@ -54,7 +51,7 @@ def _ensure_loop() -> asyncio.AbstractEventLoop:
         return loop
 
 
-def _server_params() -> StdioServerParameters:
+def _server_params() -> "StdioServerParameters":
     """Build stdio launch params for the mcp-clickhouse server from env.
 
     Mirrors the official config: uv run --with mcp-clickhouse mcp-clickhouse,
@@ -67,6 +64,9 @@ def _server_params() -> StdioServerParameters:
         tool is NOT registered, and chDB tools (run_chdb_select_query) register instead.
         chDB runs fully in-process (free, no account/credits).
     """
+    # Imported lazily so the module loads cleanly even where mcp-clickhouse/chdb are not
+    # importable at startup (e.g. some hosted runtimes) — only needed when a query runs.
+    from mcp import StdioServerParameters
     env = dict(os.environ)
     # Default to embedded chDB if nothing else is configured (free local dev).
     # IMPORTANT: chDB needs a *file-backed* data path for the mcp-clickhouse wrapper to
@@ -97,6 +97,8 @@ def _query_tool_name() -> str:
 
 
 async def _run_query(sql: str) -> list[dict]:
+    from mcp import ClientSession
+    from mcp.client.stdio import stdio_client
     params = _server_params()
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as session:

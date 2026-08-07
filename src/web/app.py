@@ -4,8 +4,13 @@ Satisfies the hackathon's web-platform rule and the "Design" criterion: a real,
 coherent product experience (upload -> agent runs -> categorized notes, conflicts,
 scene-by-scene checklist, and live ClickHouse analytics), not just a backend agent.
 
-Runs on Cloud Run; in local/dev it talks to the ADK agent in-process and to
-ClickHouse via the mcp-clickhouse server (embedded chDB by default = free, no credits).
+Hosting (Phase 5): deployed to Cloud Run. The agent runs on Vertex AI in two modes:
+  - prod: AGENT_ENGINE_ID set -> calls the agent deployed on Vertex AI Agent Engine
+    (Google Cloud Agent Platform hosting; the live hackathon deployment).
+  - dev:  in-process ADK runner (fast local iteration, same agent object).
+ClickHouse is reached via the official mcp-clickhouse server (chDB locally, ClickHouse
+Cloud in prod). All Gemini calls use Vertex AI (Application Default Credentials), not the
+Developer API — so the hackathon GCP credits apply and no 429 free-tier cap is hit.
 """
 from __future__ import annotations
 
@@ -42,6 +47,25 @@ def _get_agent():
     return _agent
 
 
+def _fallback_summary(project_id: str) -> str:
+    """Render a real summary from persisted ClickHouse analytics when the agent returns
+    no final text (the deployed agent ends on the write_clickhouse tool call)."""
+    from src.clickhouse import client as ch
+
+    try:
+        a = ch.analytics_for(project_id)
+    except Exception:
+        return (f"[agent persisted {project_id} to ClickHouse but analytics unavailable. "
+                f"See the live ClickHouse panel.]")
+    lines = [f"# scenes with notes: {len(a.get('scene_density', []))}",
+             f"# stakeholder disagreement rows: {len(a.get('stakeholder_disagreement', []))}",
+             f"# draft progress rows: {len(a.get('draft_progress', []))}",
+             "",
+             "Draft-2 revision plan (persisted in ClickHouse via mcp-clickhouse):",
+             "See the live analytics panel / notes_matrix view for the full matrix."]
+    return "\n".join(lines)
+
+
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request):
     return templates.TemplateResponse(request=request, name="index.html", context={"request": request, "result": None})
@@ -59,36 +83,56 @@ async def analyze(request: Request, file: UploadFile = File(...), title: str = F
 
     raw_lines = parse_pdf(tmp) if suffix == ".pdf" else parse_email(tmp)
 
-    # Run the ADK agent (Gemini) — lazy import; report cleanly if ADK/key unavailable.
+    # Run the ADK agent (Gemini) on Vertex AI. Two modes:
+    #  - prod: AGENT_ENGINE_ID is set -> call the agent deployed on Vertex AI Agent Engine
+    #    (Google Cloud Agent Platform hosting; this is the live hackathon deployment).
+    #  - dev:  local InMemoryRunner against the same agent object (fast, no deploy needed).
+    # Both use Application Default Credentials (Vertex mode) — no API key required.
     try:
-        from google.adk.runners import InMemoryRunner
+        import asyncio
         from google.genai import types
 
-        agent = _get_agent()
-        runner = InMemoryRunner(agent=agent, app_name="script_matrix")
+        engine_id = os.getenv("AGENT_ENGINE_ID")
+        content = types.Content(
+            role="user",
+            parts=[types.Part(text=f"Title: {title}\nFeedback file lines:\n" + "\n".join(raw_lines))],
+        )
 
-        def _run_agent() -> str:
-            import asyncio
-
-            async def _go() -> str:
-                session = await runner.session_service.create_session(
-                    app_name="script_matrix", user_id="web"
-                )
-                content = types.Content(
-                    role="user",
-                    parts=[types.Part(text=f"Title: {title}\nFeedback file lines:\n" + "\n".join(raw_lines))],
-                )
+        async def _go() -> str:
+            if engine_id:
+                from google.cloud import aiplatform
+                remote = aiplatform.agent_engines.get(engine_id)
                 out = ""
-                for event in runner.run(session_id=session.id, user_id="web", new_message=content):
-                    if event.content:
-                        for p in event.content.parts or []:
-                            if getattr(p, "text", None):
-                                out += p.text
+                for event in remote.stream_query(user_id="web", message=content):
+                    if isinstance(event, dict) and event.get("content"):
+                        for p in event["content"].get("parts", []) or []:
+                            if p.get("text"):
+                                out += p["text"]
+                # The deployed agent typically ends on the write_clickhouse tool call and
+                # returns no final text. Build a real summary from the data it persisted
+                # (project_id is deterministic from the title) so the UI always shows output.
+                if not out.strip():
+                    from src.clickhouse import client as ch
+                    out = _fallback_summary(ch.slugify_project(title))
                 return out
+            from google.adk.runners import InMemoryRunner
+            agent = _get_agent()
+            runner = InMemoryRunner(agent=agent, app_name="script_matrix")
+            session = await runner.session_service.create_session(
+                app_name="script_matrix", user_id="web"
+            )
+            out = ""
+            for event in runner.run(session_id=session.id, user_id="web", new_message=content):
+                if event.content:
+                    for p in event.content.parts or []:
+                        if getattr(p, "text", None):
+                            out += p.text
+            if not out.strip():
+                from src.clickhouse import client as ch
+                out = _fallback_summary(ch.slugify_project(title))
+            return out
 
-            return asyncio.run(_go())
-
-        answer = _run_agent() or (
+        answer = await _go() or (
             f"[agent returned no text; ingestion succeeded ({len(raw_lines)} raw note "
             f"lines from {'PDF' if suffix == '.pdf' else 'email'}). See ClickHouse analytics.]"
         )
@@ -96,10 +140,23 @@ async def analyze(request: Request, file: UploadFile = File(...), title: str = F
         answer = (
             f"[agent unavailable: {type(exc).__name__}: {exc}]\n\n"
             f"Ingestion succeeded ({len(raw_lines)} raw note lines from "
-            f"{'PDF' if suffix == '.pdf' else 'email'}). To run the full agent, install "
-            "google-adk and set GOOGLE_API_KEY (see README)."
+            f"{'PDF' if suffix == '.pdf' else 'email'}). Verify Vertex AI auth / AGENT_ENGINE_ID."
         )
     os.unlink(tmp)
+
+    # Deterministic persistence to ClickHouse (Cloud or chDB) — guaranteed regardless
+    # of whether the LLM chose to call the write_clickhouse tool. This is the load-bearing
+    # hackathon requirement: notes + conflicts MUST be persisted via mcp-clickhouse at
+    # runtime so the live analytics panel is real, not a mock.
+    try:
+        from src.agent.tools.note_tools import persist_from_raw
+        persist = persist_from_raw(title, raw_lines, source_type="producer_email")
+        persist_note = (f"\n\n[persisted] {persist.get('note_count')} notes + "
+                        f"{persist.get('conflict_count')} conflicts written to ClickHouse "
+                        f"(project '{persist.get('project_id')}').")
+        answer = answer + persist_note if answer else persist_note
+    except Exception as exc:  # noqa: BLE001 — never let persistence failure break the UI
+        answer = (answer or "") + f"\n\n[persist warning] ClickHouse write skipped: {type(exc).__name__}: {exc}"
 
     return templates.TemplateResponse(
         request=request,
