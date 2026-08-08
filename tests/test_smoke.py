@@ -21,6 +21,9 @@ os.environ["CLICKHOUSE_ALLOW_WRITE_ACCESS"] = "true"
 
 
 def test_schema_and_relational_analytics():
+    import shutil
+    shutil.rmtree("/tmp/agentic_cinema_chdb_test", ignore_errors=True)
+
     from src.clickhouse import client as ch
     from src.analytics import queries
 
