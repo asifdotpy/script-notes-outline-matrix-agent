@@ -84,15 +84,19 @@ def _server_params() -> "StdioServerParameters":
     env["CLICKHOUSE_ALLOW_DROP"] = "false"
     return StdioServerParameters(
         command="uv",
-        args=["run", "--with", "mcp-clickhouse", "--python", "3.10", "mcp-clickhouse"],
+        args=["run", "--with", "mcp-clickhouse[chdb]", "--python", "3.10", "mcp-clickhouse"],
         env=env,
     )
 
 
 def _query_tool_name() -> str:
     """Which MCP tool to call, given the active mode."""
-    cloud = bool(os.environ.get("CLICKHOUSE_HOST"))
-    ch_enabled = os.environ.get("CLICKHOUSE_ENABLED", "true").lower() != "false"
+    env = dict(os.environ)
+    if "CHDB_ENABLED" not in env and "CLICKHOUSE_HOST" not in env:
+        env["CHDB_ENABLED"] = "true"
+        env["CLICKHOUSE_ENABLED"] = "false"
+    cloud = bool(env.get("CLICKHOUSE_HOST"))
+    ch_enabled = env.get("CLICKHOUSE_ENABLED", "true").lower() != "false"
     return "run_query" if (cloud or ch_enabled) else "run_chdb_select_query"
 
 
