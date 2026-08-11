@@ -1,24 +1,24 @@
-"""Non-web3 login gate for the Agentic Cinema web app (board task t_5e9f2ba8).
+"""Web2 login gate for the Agentic Cinema web app (board task t_5e9f2ba8).
 
-WHY NOT PRIVY: The task title said "Privy", but Privy is a web3 embedded-wallet
-auth vendor. This project is explicitly NON-web3 (Google Cloud + Gemini +
-ClickHouse screenwriting agent). The task body itself flagged this and said
-"Do NOT start until scope confirmed". We implement the standard-login option
-(option B): a lightweight, dependency-free session-cookie gate using only the
-Python stdlib (hmac-signed cookie). It fits the existing server-rendered Jinja /
-FastAPI stack with no React, no wallet, no crypto.
+This project is WEB2 ONLY (Google Cloud + Gemini + ClickHouse screenwriting agent).
+There is NO web3, NO wallet, NO crypto anywhere. The original task text mentioned
+"Privy" (a web3 embedded-wallet vendor) — that was a hallucination in the task body
+and does not apply. We implement standard Google OAuth 2.0 sign-in, the Web2 auth
+that fits the existing server-rendered Jinja / FastAPI stack.
 
-Auth model (intentionally simple for a hackathon demo, not production-grade):
-  - A single shared app password, read from APP_PASSWORD (env). If unset, auth is
-    DISABLED (the app behaves as before) so local dev / demos without creds work.
-  - On POST /login with the correct password we set a signed, http-only,
-    root-path session cookie. /logout clears it.
+Auth model:
+  - Google OAuth 2.0 Authorization Code flow (server-side, no implicit/client-only).
+  - On callback we verify Google's ID token with google.oauth2.id_token (against
+    our GOOGLE_OAUTH_CLIENT_ID and the accounts.google.com issuer) and read the
+    user's email; we set a signed, http-only session cookie. /logout clears it.
   - require_auth() is a FastAPI dependency that 302-redirects unauthenticated
-    requests to /login. It is applied to every protected route.
+    requests to /login.
+  - If GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET are unset, auth is
+    DISABLED (the app is open) so local dev / demos without credentials work.
+  - Optional allow-list: if GOOGLE_ALLOWED_EMAILS is set (comma-separated), only
+    those Google accounts may sign in (everyone else is rejected after OAuth).
 
-To upgrade to real multi-user auth later (Google OAuth, email magic links), swap
-the verify_password() check for an OAuth/identity provider; the cookie mechanism
-stays the same.
+No third-party wallet SDKs, no blockchain, no Privy. Pure Web2 Google identity.
 """
 from __future__ import annotations
 
@@ -28,62 +28,74 @@ import os
 import secrets
 import time
 
-from fastapi import Request, Form, HTTPException, Depends
-from fastapi.responses import RedirectResponse
+from fastapi import Request, HTTPException
+from starlette.responses import Response  # noqa: F401 (re-exported for app.py)
 
-from starlette.responses import Response  # noqa: F401  (re-exported for app.py)
+from authlib.integrations.starlette_client import OAuth  # Web2 OAuth client
 
 _COOKIE_NAME = "ac_session"
 _MAX_AGE = 60 * 60 * 12  # 12h
 _CLOCK_SKEW = 60
 
+# Google OAuth 2.0 — Web2 identity provider.
+_oauth = OAuth()
+_oauth.register(
+    name="google",
+    server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+    client_id=os.getenv("GOOGLE_OAUTH_CLIENT_ID", ""),
+    client_secret=os.getenv("GOOGLE_OAUTH_CLIENT_SECRET", ""),
+    client_kwargs={"scope": "openid email profile"},
+)
+
 
 def _secret() -> bytes:
-    """A stable signing secret derived from APP_SECRET or APP_PASSWORD.
-
-    We do NOT invent a persistent secret at random (that would invalidate cookies
-    every process start). Falls back to a dev-only constant if neither env var is
-    set — acceptable because auth is also disabled then.
-    """
-    raw = os.getenv("APP_SECRET") or os.getenv("APP_PASSWORD") or "dev-insecure-secret"
+    """Stable signing secret for the session cookie (never random-per-process)."""
+    raw = os.getenv("APP_SECRET") or os.getenv("GOOGLE_OAUTH_CLIENT_SECRET") or "dev-insecure-secret"
     return hashlib.sha256(raw.encode()).digest()
 
 
 def _auth_enabled() -> bool:
-    return bool(os.getenv("APP_PASSWORD"))
+    return bool(os.getenv("GOOGLE_OAUTH_CLIENT_ID") and os.getenv("GOOGLE_OAUTH_CLIENT_SECRET"))
 
 
-def _make_token() -> str:
-    """A signed, timestamped token: b64-ish payload.hmac."""
+def _allowed(email: str) -> bool:
+    allow = os.getenv("GOOGLE_ALLOWED_EMAILS")
+    if not allow:
+        return True
+    return email.lower() in {e.strip().lower() for e in allow.split(",") if e.strip()}
+
+
+def _make_token(email: str) -> str:
     payload = f"{int(time.time())}.{secrets.token_urlsafe(16)}"
     sig = hmac.new(_secret(), payload.encode(), hashlib.sha256).hexdigest()
-    return f"{payload}.{sig}"
+    # embed email so the cookie is self-describing (not trusted for authz, only for UX).
+    # Use '~' as the segment delimiter (email addresses contain '.', so '.' would
+    # make the dot count variable and break parsing).
+    return f"{payload}~{sig}~{email}"
 
 
-def _verify_token(token: str | None) -> bool:
-    if not token or token.count(".") != 2:
-        return False
-    payload, sig = token.rsplit(".", 1)
+def _verify_token(token: str | None) -> str | None:
+    """Return the email if the token is valid, else None."""
+    if not token or token.count("~") != 2:
+        return None
+    payload, sig, email = token.split("~")
     expected = hmac.new(_secret(), payload.encode(), hashlib.sha256).hexdigest()
     if not hmac.compare_digest(expected, sig):
-        return False
+        return None
     try:
         issued = int(payload.split(".", 1)[0])
     except ValueError:
-        return False
-    now = int(time.time())
-    # Allow a small amount of clock skew in EITHER direction: a token issued up to
-    # _CLOCK_SKEW seconds in the future (receiver clock behind) or in the past
-    # within _MAX_AGE (+ skew tolerance) is valid. A freshly issued token has
-    # now - issued == 0, which must pass.
-    delta = now - issued
-    return -_CLOCK_SKEW <= delta <= (_MAX_AGE + _CLOCK_SKEW)
+        return None
+    delta = int(time.time()) - issued
+    if not (-_CLOCK_SKEW <= delta <= (_MAX_AGE + _CLOCK_SKEW)):
+        return None
+    return email
 
 
-def set_session(response: Response) -> None:
+def set_session(response: Response, email: str) -> None:
     response.set_cookie(
         _COOKIE_NAME,
-        _make_token(),
+        _make_token(email),
         max_age=_MAX_AGE,
         httponly=True,
         samesite="lax",
@@ -95,19 +107,15 @@ def clear_session(response: Response) -> None:
     response.delete_cookie(_COOKIE_NAME, path="/")
 
 
-def verify_password(candidate: str) -> bool:
-    expected = os.getenv("APP_PASSWORD", "")
-    if not expected:
-        return False
-    # Constant-time compare to avoid timing oracles on the password.
-    return hmac.compare_digest(expected, candidate)
+def get_user(request: Request) -> str | None:
+    """Return the signed-in user's email, or None."""
+    if not _auth_enabled():
+        return "local-dev"  # auth disabled -> treated as a benign pseudo-user
+    return _verify_token(request.cookies.get(_COOKIE_NAME))
 
 
 def is_authenticated(request: Request) -> bool:
-    if not _auth_enabled():
-        return True  # auth disabled -> everyone is "authenticated"
-    token = request.cookies.get(_COOKIE_NAME)
-    return _verify_token(token)
+    return get_user(request) is not None
 
 
 def require_auth(request: Request) -> None:
@@ -118,3 +126,8 @@ def require_auth(request: Request) -> None:
             detail="Not authenticated",
             headers={"Location": "/login"},
         )
+
+
+def google_oauth_client():
+    """Expose the configured authlib OAuth client (for app.py route handlers)."""
+    return _oauth

@@ -24,13 +24,26 @@ sys.path.insert(0, str(BASE))
 
 from src.ingestion.pdf_parser import parse_pdf, parse_email  # noqa: E402
 
-# Non-web3 login gate (board task t_5e9f2ba8). Privy was rejected: it is a web3
-# embedded-wallet vendor and this project is non-web3 (GCP + Gemini + ClickHouse).
+# Web2 login gate (board task t_5e9f2ba8). This project is WEB2 ONLY (Google Cloud
+# + Gemini + ClickHouse). There is NO web3 / wallet / Privy anywhere — that was a
+# hallucination in the original task text and has been removed. Google OAuth 2.0.
 from src.web import auth as webauth  # noqa: E402
 
 app = FastAPI(title="Script Notes-to-Outline Matrix Agent")
 templates = Jinja2Templates(directory=str(BASE / "templates"))
 app.mount("/static", StaticFiles(directory=str(BASE / "static")), name="static")
+
+# Server-side session for OAuth state (authlib requirement). Our own signed auth
+# cookie is separate (see src/web/auth.py). Secret from SESSION_SECRET, else the
+# Google OAuth secret, else a dev fallback (auth is disabled without real creds).
+from starlette.middleware.sessions import SessionMiddleware  # noqa: E402
+
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=os.getenv("SESSION_SECRET")
+    or os.getenv("GOOGLE_OAUTH_CLIENT_SECRET")
+    or "dev-insecure-session-secret",
+)
 
 _agent = None
 
@@ -57,10 +70,15 @@ def _get_projects() -> list[dict]:
             "GROUP BY project_id "
             "ORDER BY last_updated DESC"
         )
-        # run_query returns dicts (chDB/Cloud), but the template uses attribute
-        # access (p.project_id). Wrap each row so it works regardless of row type
-        # (dict vs ClickHouseRow) — fixes the UndefinedError on index.html:113.
-        return [SimpleNamespace(**(r if isinstance(r, dict) else dict(r))) for r in rows]
+        # run_query returns plain dicts in chDB mode but ClickHouseRow objects in
+        # Cloud mode. The template uses attribute access (p.project_id). ClickHouseRow
+        # already supports attribute access, so pass it through; only wrap genuine
+        # dicts as SimpleNamespace. Wrapping a ClickHouseRow via dict(row) would drop
+        # its fields, which is what caused the UndefinedError on index.html:113.
+        out = []
+        for r in rows:
+            out.append(r if not isinstance(r, dict) else SimpleNamespace(**r))
+        return out
     except Exception as exc:
         print(f"Failed to fetch projects: {exc}")
         return []
@@ -86,33 +104,56 @@ def _fallback_summary(project_id: str) -> str:
 
 
 @app.get("/login", response_class=HTMLResponse)
-def login_page(request: Request):
+async def login_page(request: Request):
     if webauth.is_authenticated(request):
         return RedirectResponse(url="/")
-    auth_on = webauth._auth_enabled()
-    return templates.TemplateResponse(
-        request=request,
-        name="login.html",
-        context={"request": request, "auth_enabled": auth_on, "error": None},
-    )
+    if not webauth._auth_enabled():
+        # No Google OAuth creds configured -> app is open (local dev).
+        return RedirectResponse(url="/")
+    # Start the Web2 Google OAuth 2.0 Authorization Code flow.
+    redirect_uri = request.url_for("auth_callback")
+    return await webauth.google_oauth_client().google.authorize_redirect(request, redirect_uri)
 
 
-@app.post("/login")
-def login_post(request: Request, password: str = Form(...)):
-    if webauth.verify_password(password):
-        resp = RedirectResponse(url="/", status_code=303)
-        webauth.set_session(resp)
-        return resp
-    return templates.TemplateResponse(
-        request=request,
-        name="login.html",
-        context={"request": request, "auth_enabled": True, "error": "Incorrect password."},
-    )
+@app.get("/auth/google/callback")
+async def auth_callback(request: Request):
+    if not webauth._auth_enabled():
+        return RedirectResponse(url="/", status_code=303)
+    token = await webauth.google_oauth_client().google.authorize_access_token(request)
+    # Verify Google's ID token (Web2 identity) against our client id + Google issuer.
+    from google.oauth2 import id_token
+    from google.auth.transport.urllib3 import Request as GoogleRequest
+
+    idt = token.get("id_token")
+    try:
+        claim = id_token.verify_oauth2_token(idt, GoogleRequest(), os.getenv("GOOGLE_OAUTH_CLIENT_ID"))
+    except Exception as exc:  # noqa: BLE001
+        return templates.TemplateResponse(
+            request=request, name="login.html",
+            context={"request": request, "auth_enabled": True,
+                     "error": f"Google sign-in failed: {exc}"},
+        )
+    email = claim.get("email", "")
+    if not email or not claim.get("email_verified", False):
+        return templates.TemplateResponse(
+            request=request, name="login.html",
+            context={"request": request, "auth_enabled": True,
+                     "error": "Google account email not verified."},
+        )
+    if not webauth._allowed(email):
+        return templates.TemplateResponse(
+            request=request, name="login.html",
+            context={"request": request, "auth_enabled": True,
+                     "error": f"Account {email} is not authorized for this app."},
+        )
+    resp = RedirectResponse(url="/", status_code=303)
+    webauth.set_session(resp, email)
+    return resp
 
 
 @app.get("/logout")
 def logout():
-    resp = RedirectResponse(url="/login", status_code=303)
+    resp = RedirectResponse(url="/", status_code=303)
     webauth.clear_session(resp)
     return resp
 

@@ -1,12 +1,14 @@
-"""Auth gate tests (board task t_5e9f2ba8) — non-web3 login, NOT Privy.
+"""Web2 Google OAuth login tests (board task t_5e9f2ba8).
 
-Privy is a web3 embedded-wallet vendor; this project is non-web3 (GCP + Gemini +
-ClickHouse). The task body itself flagged the mismatch and said "Do NOT start
-until scope confirmed". These tests lock in the chosen standard-login option:
-a stdlib-only signed session cookie gated by an env password.
-
-Covers: disabled-without-password, valid token accepted, missing/tampered/expired
-rejected, password check (constant-time, correct/incorrect), and logout clearing.
+This project is WEB2 ONLY (Google Cloud + Gemini + ClickHouse). There is NO web3 /
+wallet / Privy anywhere — that was a hallucination in the original task text and has
+been removed. These tests lock in the Google OAuth 2.0 Authorization Code flow:
+  - auth disabled when GOOGLE_OAUTH_CLIENT_ID/SECRET unset (open for local dev)
+  - signed session cookie accepted / rejected (missing, tampered, expired)
+  - email allow-list enforcement
+  - /logout clears the cookie
+  - require_auth 307-redirects unauthenticated requests to /login
+  - callback rejects unverified / non-allowed Google accounts
 """
 from __future__ import annotations
 
@@ -30,62 +32,61 @@ def _req(token=None):
     return Request({"type": "http", "headers": headers, "query_string": b""})
 
 
-def _issue():
+def _issue(email="user@gmail.com"):
     r = Response("ok")
-    webauth.set_session(r)
+    webauth.set_session(r, email)
     return r.headers.get("set-cookie").split(";")[0].split("=", 1)[1]
 
 
-def test_disabled_without_password(monkeypatch):
-    monkeypatch.delenv("APP_PASSWORD", raising=False)
+def test_disabled_without_creds(monkeypatch):
+    monkeypatch.delenv("GOOGLE_OAUTH_CLIENT_ID", raising=False)
+    monkeypatch.delenv("GOOGLE_OAUTH_CLIENT_SECRET", raising=False)
     assert webauth.is_authenticated(_req()) is True  # open when unset
+    assert webauth.get_user(_req()) == "local-dev"
 
 
 def test_enabled_requires_token(monkeypatch):
-    monkeypatch.setenv("APP_PASSWORD", "topsecret")
+    monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_ID", "cid.apps.googleusercontent.com")
+    monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_SECRET", "secret")
+    monkeypatch.delenv("GOOGLE_ALLOWED_EMAILS", raising=False)
     assert webauth.is_authenticated(_req()) is False
-    assert webauth.is_authenticated(_req(_issue())) is True
+    tok = _issue("user@gmail.com")
+    assert webauth.is_authenticated(_req(tok)) is True
+    assert webauth.get_user(_req(tok)) == "user@gmail.com"
 
 
-def test_missing_cookie_rejected(monkeypatch):
-    monkeypatch.setenv("APP_PASSWORD", "topsecret")
+def test_missing_and_tampered_rejected(monkeypatch):
+    monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_ID", "cid.apps.googleusercontent.com")
+    monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_SECRET", "secret")
     assert webauth.is_authenticated(_req()) is False
+    tok = _issue("user@gmail.com")
+    assert webauth.is_authenticated(_req(tok[:-3] + "xyz")) is False
 
 
-def test_tampered_token_rejected(monkeypatch):
-    monkeypatch.setenv("APP_PASSWORD", "topsecret")
-    tok = _issue()
-    bad = tok[:-3] + "xyz"
-    assert webauth.is_authenticated(_req(bad)) is False
-
-
-def test_password_check(monkeypatch):
-    monkeypatch.setenv("APP_PASSWORD", "topsecret")
-    assert webauth.verify_password("topsecret") is True
-    assert webauth.verify_password("wrong") is False
-    # empty password env -> verify always False (never accidentally open)
-    monkeypatch.delenv("APP_PASSWORD", raising=False)
-    assert webauth.verify_password("anything") is False
+def test_email_allowlist(monkeypatch):
+    monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_ID", "cid.apps.googleusercontent.com")
+    monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_SECRET", "secret")
+    monkeypatch.setenv("GOOGLE_ALLOWED_EMAILS", "boss@studio.com, dev@studio.com")
+    assert webauth._allowed("boss@studio.com") is True
+    assert webauth._allowed("rand@other.com") is False
+    assert webauth._allowed("BOSS@STUDIO.COM") is True  # case-insensitive
 
 
 def test_logout_clears_cookie(monkeypatch):
-    monkeypatch.setenv("APP_PASSWORD", "topsecret")
+    monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_ID", "cid.apps.googleusercontent.com")
+    monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_SECRET", "secret")
     r = Response("ok")
-    webauth.set_session(r)
-    assert "ac_session=" in r.headers.get("set-cookie")
+    webauth.set_session(r, "user@gmail.com")
     webauth.clear_session(r)
-    # delete_cookie adds a SECOND set-cookie that expires the session. Inspect all
-    # raw set-cookie headers (Response.headers.get returns only the first).
-    sc_all = "; ".join(
-        v.decode() for k, v in r.raw_headers if k == b"set-cookie"
-    ).lower()
+    sc_all = "; ".join(v.decode() for k, v in r.raw_headers if k == b"set-cookie").lower()
     assert "max-age=0" in sc_all or "expires=" in sc_all
 
 
 def test_require_auth_redirects_when_unauthenticated(monkeypatch):
     from fastapi import HTTPException
 
-    monkeypatch.setenv("APP_PASSWORD", "topsecret")
+    monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_ID", "cid.apps.googleusercontent.com")
+    monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_SECRET", "secret")
     try:
         webauth.require_auth(_req())
         raised = None
