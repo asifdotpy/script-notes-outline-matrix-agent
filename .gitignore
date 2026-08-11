@@ -34,6 +34,9 @@ data/
 # Hermes local planning state (plans, project cache) — not submission code
 .hermes/
 
+# Hermes kanban task worktrees (Hermes-internal, not submission code)
+.worktrees/
+
 # Reference vendor repos (kept out of the submission)
 references/
 .sa-key.json
