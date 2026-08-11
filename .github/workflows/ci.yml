@@ -23,7 +23,7 @@ jobs:
 
       - name: Create venv + install dependencies
         run: |
-          uv venv --python 3.10
+          uv venv --python 3.10 --clear
           uv pip install -r requirements.txt
           uv pip install pytest fpdf2
 

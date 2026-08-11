@@ -12,6 +12,9 @@ uvicorn[standard]>=0.29.0
 jinja2>=3.1.0
 python-multipart>=0.0.9
 python-dotenv>=1.0.0
+authlib>=1.7.0
+itsdangerous>=2.2.0
+google-auth>=2.0.0
 
 # --- Ingestion: external PDF coverage + .eml producer/agent emails ---
 pdfplumber>=0.11.0
