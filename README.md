@@ -18,12 +18,27 @@ Auth is **Google OAuth 2.0** (standard Google sign-in).
 
 ## Build status (this submission)
 
-- **Agent deployed live** to Vertex AI Agent Engine (`AGENT_ENGINE_ID` in `.env`); the Gemini → ClickHouse
-  pipeline was run end-to-end and verified (feedback → categorized notes → conflict flags → persisted to ClickHouse).
-- **Tests:** golden dataset + eval harness + suites A–E (ingestion, categorization, conflict detection,
-  checklist, ClickHouse) + script-scene cross-check + OAuth login — all passing on embedded chDB.
+- **Scoped and tool-ready:** the ADK agent (`src/agent/agent.py`) is written and imports cleanly
+  (google-adk 2.6.3, Gemini model = gemini-2.5-flash, 6 FunctionTools), but **has not been deployed or
+  run end-to-end yet** — the Gemini credential (Vertex AI ADC / `GOOGLE_APPLICATION_CREDENTIALS`, or a
+  `GOOGLE_API_KEY`) is the one remaining blocker before the agent can execute. The demo-video walkthrough
+  (`docs/demo_script.md`) is prepared and ready to record once credentials are in place.
+- **Non-LLM pieces fully built + tested:** ingestion (PDF + email, 11 tests), deterministic note
+  categorization (7 tests, no hallucinated categories), conflict detection (7 tests, no false positives),
+  scene-by-scene checklist assembly (10 tests, zero-hallucination contract), ClickHouse schema + relational
+  analytics (smoke test passes on embedded chDB), and the Google OAuth 2.0 gate (6 tests). Full suite status
+  is in `BUILD_SPEC.md` and `.github/workflows/ci.yml`.
+- **ClickHouse story is always true:** `persist_from_raw()` (deterministic, LLM-free) runs after every agent
+  attempt in both the web route and the demo harness, so notes + conflicts are persisted to ClickHouse via
+  the official `mcp-clickhouse` server even when the LLM is unavailable, rate-limited, or forgets to call the
+  tool. This keeps the hackathon's "active runtime ClickHouse" requirement satisfied regardless of Gemini state.
+- **Web UI boots and serves:** FastAPI + Jinja2 + Tailwind + Chart.js; upload → agent runs → categorized notes,
+  conflicts, checklist, analytics. Locally testable on embedded chDB with no cloud account.
 - **CI:** GitHub Actions (`.github/workflows/ci.yml`) runs `pytest` + the eval harness on every push/PR using
   free embedded **chDB** (no ClickHouse Cloud account needed in CI).
+- **Deployment scripts written, not yet executed:** `deploy/deploy_agent.py` (Vertex AI Agent Engine) and
+  `deploy/cloud_run.yaml` (Cloud Run for the web surface) are complete and ready; they need GCP auth + the
+  hackathon $100 credits to run.
 
 ## How it works (at a glance)
 
@@ -78,8 +93,9 @@ fix for Draft 2" list — with everything saved in a real database you can analy
   plus **`.fdx` (Final Draft) export** of the revision notes.
 - **Google OAuth 2.0 sign-in** — the web app is gated by standard Google Identity
   (Authorization Code flow, ID-token verification).
-- **Gemini on Vertex AI Agent Engine** — the agent is deployed to Google Cloud Agent Platform and
-  called by the web app in production; verified live this build.
+- **Gemini on Vertex AI Agent Engine** — the agent is designed to deploy to Google Cloud Agent Platform and
+  be called by the web app in production; deployment script (`deploy/deploy_agent.py`) is written and ready
+  but not yet executed (pending Gemini credentials).
 
 ## Architecture
 
@@ -88,8 +104,9 @@ fix for Draft 2" list — with everything saved in a real database you can analy
 - **Storage** (`src/clickhouse`): official `mcp-clickhouse` MCP server; schema in `schema.sql`.
   Dev runs on free embedded **chDB**; the live submission flips to **ClickHouse Cloud** via env vars only.
 - **Web** (`src/web`, FastAPI): upload → agent runs → categorized notes, conflicts, checklist, analytics.
-  In production the web calls the agent **deployed on Vertex AI Agent Engine** (`AGENT_ENGINE_ID`);
-  locally it uses an in-process ADK runner. Both use Vertex Gemini.
+  In production the web *would* call the agent deployed on Vertex AI Agent Engine (`AGENT_ENGINE_ID`);
+  locally it uses an in-process ADK runner. Both paths are written; the remote-engine path is not yet
+  exercised (pending Gemini credentials + deployment).
 - **Deploy** (`deploy/`): `deploy_agent.py` deploys the agent to Vertex AI Agent Engine;
   `cloud_run.yaml` documents the Cloud Run deploy for the web surface.
 
@@ -129,12 +146,14 @@ fix for Draft 2" list — with everything saved in a real database you can analy
                                                        │   + relational analytics views │
                                                        └──────────────────────────────┘
 
-Deploy topology:
+Deploy topology (written, not all executed):
   Local dev : FastAPI ──in-process ADK runner──▶ mcp-clickhouse (chDB)
-  Prod      : FastAPI (Cloud Run) ──AGENT_ENGINE_ID──▶ Vertex AI Agent Engine
+  Prod plan : FastAPI (Cloud Run) ──AGENT_ENGINE_ID──▶ Vertex AI Agent Engine
                                                    (same agent) ──▶ mcp-clickhouse ──▶ ClickHouse Cloud
-  Auth      : Google OAuth 2.0 (Authorization Code flow, ID-token verified).
+  Auth plan : Google OAuth 2.0 (Authorization Code flow, ID-token verified).
               Vertex AI access via Application Default Credentials (SA key / gcloud ADC); no API key.
+  Status    : web + chDB path runs locally and is tested; Vertex/Cloud paths are scripted but
+              not yet deployed (pending Gemini credentials + GCP project).
 ```
 
 ## Quickstart (local, free — no cloud account needed)
@@ -148,7 +167,10 @@ python -m src.clickhouse.client     # applies schema, prints OK
 uvicorn src.web.app:app --port 8080  # open http://localhost:8080
 ```
 
-`run_agent_demo.py tests/sample_feedback.eml` exercises the full flow end-to-end on the CLI.
+`run_agent_demo.py tests/sample_feedback.eml` is the prepared end-to-end CLI harness — it exercises the
+full flow (ingest → Gemini categorize → conflict detect → ClickHouse persist → analytics) but **requires
+Gemini credentials** (Vertex AI ADC via `GOOGLE_APPLICATION_CREDENTIALS` + `GOOGLE_GENAI_USE_VERTEXAI=true`,
+or a `GOOGLE_API_KEY`) to actually run; without them it exits with a clear credential error.
 
 > **Auth note:** with no Google OAuth credentials set, the web app runs **open** (no login wall) for
 > local dev/demo. To enable the production sign-in gate, set the `GOOGLE_OAUTH_*` env vars below.
