@@ -50,6 +50,11 @@ PRIMARY KEY (project_id, draft_version, scene_number)
 ORDER BY (project_id, draft_version, scene_number, conflict_id);
 
 -- Convenience view: the "matrix" — notes joined to conflicts they triggered.
+-- has_conflict is derived from a scene-level conflict tally rather than a raw
+-- LEFT JOIN nullability check: in chDB/ClickHouse an unmatched LEFT JOIN row
+-- fills conflict_id with the zero-UUID default (not SQL NULL), so `IS NOT NULL`
+-- is ALWAYS true and would flag every scene. Aggregating conflicts per scene and
+-- testing count > 0 is correct on both chDB and ClickHouse Cloud.
 CREATE OR REPLACE VIEW script_notes_matrix.notes_matrix AS
 SELECT
     n.project_id,
@@ -59,9 +64,13 @@ SELECT
     n.category,
     n.severity,
     n.raw_note_text,
-    c.conflict_id IS NOT NULL AS has_conflict
+    (cc.conflict_count > 0) AS has_conflict
 FROM script_notes_matrix.notes_raw n
-LEFT JOIN script_notes_matrix.notes_conflicts c
-    ON n.project_id = c.project_id
-   AND n.draft_version = c.draft_version
-   AND n.scene_number = c.scene_number;
+LEFT JOIN (
+    SELECT project_id, draft_version, scene_number, count(*) AS conflict_count
+    FROM script_notes_matrix.notes_conflicts
+    GROUP BY project_id, draft_version, scene_number
+) cc
+    ON n.project_id = cc.project_id
+   AND n.draft_version = cc.draft_version
+   AND n.scene_number = cc.scene_number;

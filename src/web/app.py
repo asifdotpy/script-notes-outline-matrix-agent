@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 from fastapi import FastAPI, Request, UploadFile, File, Form, HTTPException
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, Response, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -23,6 +23,10 @@ os.makedirs(BASE / "static", exist_ok=True)
 sys.path.insert(0, str(BASE))
 
 from src.ingestion.pdf_parser import parse_pdf, parse_email  # noqa: E402
+
+# Non-web3 login gate (board task t_5e9f2ba8). Privy was rejected: it is a web3
+# embedded-wallet vendor and this project is non-web3 (GCP + Gemini + ClickHouse).
+from src.web import auth as webauth  # noqa: E402
 
 app = FastAPI(title="Script Notes-to-Outline Matrix Agent")
 templates = Jinja2Templates(directory=str(BASE / "templates"))
@@ -42,6 +46,8 @@ def _get_agent():
 
 def _get_projects() -> list[dict]:
     """Retrieve list of previously processed projects from ClickHouse."""
+    from types import SimpleNamespace
+
     from src.clickhouse import client as ch
     try:
         ch.init_schema()
@@ -51,7 +57,10 @@ def _get_projects() -> list[dict]:
             "GROUP BY project_id "
             "ORDER BY last_updated DESC"
         )
-        return rows
+        # run_query returns dicts (chDB/Cloud), but the template uses attribute
+        # access (p.project_id). Wrap each row so it works regardless of row type
+        # (dict vs ClickHouseRow) — fixes the UndefinedError on index.html:113.
+        return [SimpleNamespace(**(r if isinstance(r, dict) else dict(r))) for r in rows]
     except Exception as exc:
         print(f"Failed to fetch projects: {exc}")
         return []
@@ -76,8 +85,41 @@ def _fallback_summary(project_id: str) -> str:
     return "\n".join(lines)
 
 
+@app.get("/login", response_class=HTMLResponse)
+def login_page(request: Request):
+    if webauth.is_authenticated(request):
+        return RedirectResponse(url="/")
+    auth_on = webauth._auth_enabled()
+    return templates.TemplateResponse(
+        request=request,
+        name="login.html",
+        context={"request": request, "auth_enabled": auth_on, "error": None},
+    )
+
+
+@app.post("/login")
+def login_post(request: Request, password: str = Form(...)):
+    if webauth.verify_password(password):
+        resp = RedirectResponse(url="/", status_code=303)
+        webauth.set_session(resp)
+        return resp
+    return templates.TemplateResponse(
+        request=request,
+        name="login.html",
+        context={"request": request, "auth_enabled": True, "error": "Incorrect password."},
+    )
+
+
+@app.get("/logout")
+def logout():
+    resp = RedirectResponse(url="/login", status_code=303)
+    webauth.clear_session(resp)
+    return resp
+
+
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request):
+    webauth.require_auth(request)
     projects = _get_projects()
     return templates.TemplateResponse(
         request=request,
@@ -93,6 +135,7 @@ def index(request: Request):
 
 @app.get("/project/{project_id}", response_class=HTMLResponse)
 def view_project(request: Request, project_id: str, draft_version: int = 1):
+    webauth.require_auth(request)
     from src.clickhouse import client as ch
     from src.analytics import queries
     from src.agent.tools.note_tools import build_checklist
@@ -138,6 +181,7 @@ def view_project(request: Request, project_id: str, draft_version: int = 1):
 
 @app.post("/analyze", response_class=HTMLResponse)
 async def analyze(request: Request, file: UploadFile = File(...), title: str = Form("Untitled draft")):
+    webauth.require_auth(request)
     # Persist upload to a temp path, parse, run the agent, render results.
     import tempfile
 

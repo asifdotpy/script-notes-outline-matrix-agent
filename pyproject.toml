@@ -7,6 +7,9 @@ name = "agentic-cinema"
 version = "0.1.0"
 description = "Script Notes-to-Outline Matrix Agent (ADK + Gemini on Vertex AI)"
 requires-python = ">=3.10"
+dependencies = [
+    "fpdf2>=2.8.8",
+]
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -14,3 +17,11 @@ include = ["src*"]
 
 [tool.setuptools.package-data]
 src = ["clickhouse/schema.sql"]
+
+[tool.pytest.ini_options]
+# Only our project's tests should be collected. The vendored `references/`
+# subtree includes a copy of mcp-clickhouse's own test suite that imports private
+# symbols and errors on import; it must never be collected as part of our CI run.
+testpaths = ["tests"]
+norecursedirs = ["references", "venv", ".venv", "node_modules"]
+addopts = "-p no:cacheprovider"

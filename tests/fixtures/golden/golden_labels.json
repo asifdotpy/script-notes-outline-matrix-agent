@@ -1,0 +1,274 @@
+{
+  "script_title": "The Last Lighthouse \u2014 Draft 1",
+  "expected_project_id": "the-last-lighthouse-draft-1",
+  "categories": [
+    {
+      "note_id": "n01",
+      "source_file": "producer_email.eml",
+      "source_type": "producer_email",
+      "author": "Margaret",
+      "raw_text": "The opening scene is too slow. We lose the audience in the first two minutes. Cut about a third of scene 1 and get to Ella climbing faster.",
+      "expected_category": "structure",
+      "expected_severity": "high",
+      "scene_number": 1
+    },
+    {
+      "note_id": "n02",
+      "source_file": "manager_email.eml",
+      "source_type": "agent_email",
+      "author": "Dev",
+      "raw_text": "The opening scene is too slow. I'd actually open even later, mid-climb.",
+      "expected_category": "structure",
+      "expected_severity": "high",
+      "scene_number": 1
+    },
+    {
+      "note_id": "n03",
+      "source_file": "coverage_report.pdf",
+      "source_type": "pdf_coverage",
+      "author": "Coverage #4421",
+      "raw_text": "Structure: the opening (scene 1) is too slow and risks losing the audience.",
+      "expected_category": "structure",
+      "expected_severity": "high",
+      "scene_number": 1
+    },
+    {
+      "note_id": "n04",
+      "source_file": "producer_email.eml",
+      "source_type": "producer_email",
+      "author": "Margaret",
+      "raw_text": "Dialogue in scene 2 is on the nose. Make it sharper and less expository.",
+      "expected_category": "dialogue",
+      "expected_severity": "high",
+      "scene_number": 2
+    },
+    {
+      "note_id": "n05",
+      "source_file": "manager_email.eml",
+      "source_type": "agent_email",
+      "author": "Dev",
+      "raw_text": "Dialogue in scene 2 is on the nose. Agreed with Margaret, sharpen it.",
+      "expected_category": "dialogue",
+      "expected_severity": "high",
+      "scene_number": 2
+    },
+    {
+      "note_id": "n06",
+      "source_file": "coverage_report.pdf",
+      "source_type": "pdf_coverage",
+      "author": "Coverage #4421",
+      "raw_text": "Dialogue in scene 2 is on the nose.",
+      "expected_category": "dialogue",
+      "expected_severity": "high",
+      "scene_number": 2
+    },
+    {
+      "note_id": "n07",
+      "source_file": "producer_email.eml",
+      "source_type": "producer_email",
+      "author": "Margaret",
+      "raw_text": "Scene 3 drags. Tighten the harbor questioning \u2014 it runs long.",
+      "expected_category": "pacing",
+      "expected_severity": "medium",
+      "scene_number": 3
+    },
+    {
+      "note_id": "n08",
+      "source_file": "manager_email.eml",
+      "source_type": "agent_email",
+      "author": "Dev",
+      "raw_text": "Cut scene 3 entirely. The harbor questioning slows the middle.",
+      "expected_category": "pacing",
+      "expected_severity": "high",
+      "scene_number": 3
+    },
+    {
+      "note_id": "n09",
+      "source_file": "coverage_report.pdf",
+      "source_type": "pdf_coverage",
+      "author": "Coverage #4421",
+      "raw_text": "Pacing: scene 3 drags and scene 6 is overlong.",
+      "expected_category": "pacing",
+      "expected_severity": "medium",
+      "scene_number": 3
+    },
+    {
+      "note_id": "n10",
+      "source_file": "manager_email.eml",
+      "source_type": "agent_email",
+      "author": "Dev",
+      "raw_text": "The logic of the archives reveal in scene 4 is murky. How does she know the light was off? Make the clue concrete.",
+      "expected_category": "logic",
+      "expected_severity": "medium",
+      "scene_number": 4
+    },
+    {
+      "note_id": "n11",
+      "source_file": "coverage_report.pdf",
+      "source_type": "pdf_coverage",
+      "author": "Coverage #4421",
+      "raw_text": "Logic: the scene 4 archives reveal lacks a concrete clue.",
+      "expected_category": "logic",
+      "expected_severity": "medium",
+      "scene_number": 4
+    },
+    {
+      "note_id": "n12",
+      "source_file": "producer_email.eml",
+      "source_type": "producer_email",
+      "author": "Margaret",
+      "raw_text": "Expand the dinner scene. Scene 5 is the emotional core and right now it feels rushed. Give the harbormaster more to do.",
+      "expected_category": "character",
+      "expected_severity": "high",
+      "scene_number": 5
+    },
+    {
+      "note_id": "n13",
+      "source_file": "manager_email.eml",
+      "source_type": "agent_email",
+      "author": "Dev",
+      "raw_text": "Expand the dinner scene. Scene 5 needs more room to breathe; the confrontation is the heart of the movie.",
+      "expected_category": "character",
+      "expected_severity": "high",
+      "scene_number": 5
+    },
+    {
+      "note_id": "n14",
+      "source_file": "coverage_report.pdf",
+      "source_type": "pdf_coverage",
+      "author": "Coverage #4421",
+      "raw_text": "The emotional core in the dinner scene (scene 5) lands. Expand it; the confrontation between Ella and the harbormaster is the best writing here.",
+      "expected_category": "character",
+      "expected_severity": "high",
+      "scene_number": 5
+    },
+    {
+      "note_id": "n15",
+      "source_file": "producer_email.eml",
+      "source_type": "producer_email",
+      "author": "Margaret",
+      "raw_text": "The storm sequence in scene 6 is too long. Trim it by a minute.",
+      "expected_category": "pacing",
+      "expected_severity": "medium",
+      "scene_number": 6
+    },
+    {
+      "note_id": "n16",
+      "source_file": "coverage_report.pdf",
+      "source_type": "pdf_coverage",
+      "author": "Coverage #4421",
+      "raw_text": "Pacing: scene 3 drags and scene 6 is overlong.",
+      "expected_category": "pacing",
+      "expected_severity": "medium",
+      "scene_number": 6
+    },
+    {
+      "note_id": "n17",
+      "source_file": "producer_email.eml",
+      "source_type": "producer_email",
+      "author": "Margaret",
+      "raw_text": "Love the ending. Scene 7 is perfect, don't change it.",
+      "expected_category": "other",
+      "expected_severity": "low",
+      "scene_number": 7
+    },
+    {
+      "note_id": "n18",
+      "source_file": "manager_email.eml",
+      "source_type": "agent_email",
+      "author": "Dev",
+      "raw_text": "I loved scene 7. Keep it exactly as is.",
+      "expected_category": "other",
+      "expected_severity": "low",
+      "scene_number": 7
+    },
+    {
+      "note_id": "n19",
+      "source_file": "coverage_report.pdf",
+      "source_type": "pdf_coverage",
+      "author": "Coverage #4421",
+      "raw_text": "The ending (scene 7) is quietly powerful. Do not change it.",
+      "expected_category": "other",
+      "expected_severity": "low",
+      "scene_number": 7
+    },
+    {
+      "note_id": "n20",
+      "source_file": "coverage_report.pdf",
+      "source_type": "pdf_coverage",
+      "author": "Coverage #4421",
+      "raw_text": "Format: scene headings are inconsistent in a few places.",
+      "expected_category": "format",
+      "expected_severity": "low",
+      "scene_number": 0
+    },
+    {
+      "note_id": "n21",
+      "source_file": "director_email.eml",
+      "source_type": "agent_email",
+      "author": "Nadia",
+      "raw_text": "Cut the dinner scene. Scene 5 stops the film dead \u2014 I'd remove it entirely and fold the reveal into the archives.",
+      "expected_category": "character",
+      "expected_severity": "high",
+      "scene_number": 5
+    },
+    {
+      "note_id": "n22",
+      "source_file": "director_email.eml",
+      "source_type": "agent_email",
+      "author": "Nadia",
+      "raw_text": "Tighten scene 6. The storm is gorgeous but overlong.",
+      "expected_category": "pacing",
+      "expected_severity": "medium",
+      "scene_number": 6
+    },
+    {
+      "note_id": "n23",
+      "source_file": "director_email.eml",
+      "source_type": "agent_email",
+      "author": "Nadia",
+      "raw_text": "Scene 7 is the reason I want to make this. Keep it untouched.",
+      "expected_category": "other",
+      "expected_severity": "low",
+      "scene_number": 7
+    }
+  ],
+  "conflicts": [
+    {
+      "conflict_id": "c01",
+      "scene_number": 5,
+      "stakeholder_a": "Nadia (director_email)",
+      "note_a_id": "n21",
+      "stakeholder_b": "Margaret (producer_email)",
+      "note_b_id": "n12",
+      "conflict_type": "Structural"
+    },
+    {
+      "conflict_id": "c02",
+      "scene_number": 5,
+      "stakeholder_a": "Nadia (director_email)",
+      "note_a_id": "n21",
+      "stakeholder_b": "Dev (agent_email)",
+      "note_b_id": "n13",
+      "conflict_type": "Structural"
+    },
+    {
+      "conflict_id": "c03",
+      "scene_number": 5,
+      "stakeholder_a": "Nadia (director_email)",
+      "note_a_id": "n21",
+      "stakeholder_b": "Coverage #4421 (pdf_coverage)",
+      "note_b_id": "n14",
+      "conflict_type": "Structural"
+    }
+  ],
+  "category_counts": {
+    "structure": 3,
+    "dialogue": 3,
+    "pacing": 6,
+    "logic": 2,
+    "character": 4,
+    "other": 4,
+    "format": 1
+  }
+}

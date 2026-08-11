@@ -1,0 +1,75 @@
+{
+  "mode": "deterministic",
+  "metrics": {
+    "categorization": {
+      "accuracy": 0.5652173913043478,
+      "n": 23,
+      "correct": 13,
+      "macro_precision": 0.7551020408163265,
+      "macro_recall": 0.6666666666666666,
+      "macro_f1": 0.634920634920635,
+      "per_class": {
+        "structure": {
+          "tp": 1,
+          "fp": 0,
+          "fn": 2
+        },
+        "other": {
+          "tp": 4,
+          "fp": 10,
+          "fn": 0
+        },
+        "dialogue": {
+          "tp": 3,
+          "fp": 0,
+          "fn": 0
+        },
+        "pacing": {
+          "tp": 2,
+          "fp": 0,
+          "fn": 4
+        },
+        "logic": {
+          "tp": 2,
+          "fp": 0,
+          "fn": 0
+        },
+        "character": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 4
+        },
+        "format": {
+          "tp": 1,
+          "fp": 0,
+          "fn": 0
+        }
+      }
+    },
+    "scene": {
+      "scene_accuracy": 0.9130434782608695,
+      "n": 23,
+      "correct": 21
+    },
+    "conflict": {
+      "predicted_pairs": 3,
+      "golden_pairs": 3,
+      "pair_precision": 1.0,
+      "pair_recall": 1.0,
+      "scene_recall": 1.0,
+      "pred_scenes": [
+        5
+      ],
+      "gold_scenes": [
+        5
+      ]
+    }
+  },
+  "expected_baselines": {
+    "categorization_accuracy": 0.565,
+    "scene_accuracy": 0.9,
+    "conflict_scene_recall": 1.0,
+    "conflict_pair_recall": 1.0
+  },
+  "gate_passed": true
+}

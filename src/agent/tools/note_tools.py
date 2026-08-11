@@ -113,6 +113,79 @@ def _resolve_scene_num(note: dict, raw: str) -> int:
     return 0
 
 
+_re = __import__("re")
+# Standard screenplay scene heading: optional leading scene number, then INT./EXT.
+# (or I/E). Examples: "INT. DINING ROOM - NIGHT", "5. INT. DINING ROOM - NIGHT",
+# "EXT. COASTAL CLIFF - DAWN". Also accept explicit "SCENE n" headings.
+_SLUGLINE_RE = _re.compile(
+    r"^\s*(?:\d+\.\s*)?(?:INT|EXT|INT\.?/EXT|I/E)[\.\s]", _re.IGNORECASE)
+_SCENE_HEADING_RE = _re.compile(r"^\s*scene\s+#?(\d+)\b", _re.IGNORECASE)
+
+
+def parse_screenplay_scenes(script_text: str) -> list[dict]:
+    """Parse a screenplay into an ordered list of scenes.
+
+    Recognizes both numbered 'SCENE n' headings and standard sluglines
+    (INT./EXT. ...). Scenes are numbered 1..N in the order they appear. Returns
+    [{scene_number, heading}]. This is the authoritative list of scenes that
+    actually EXIST in the script — the cross-check uses it to catch feedback that
+    references a scene the script does not contain.
+    """
+    scenes: list[dict] = []
+    for line in (script_text or "").splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        m = _SCENE_HEADING_RE.match(stripped)
+        if m:
+            scenes.append({"scene_number": int(m.group(1)), "heading": stripped})
+            continue
+        if _SLUGLINE_RE.match(stripped):
+            scenes.append({"scene_number": len(scenes) + 1, "heading": stripped})
+    # If explicit numbers were used, honor them; otherwise the positional numbers
+    # assigned above already form 1..N.
+    return scenes
+
+
+def cross_check_script_scenes(script_text: str, notes: list[dict]) -> dict:
+    """Cross-check feedback notes against the scenes that actually exist in the script.
+
+    Board task t_4f0e8c7c. For every note we resolve its target scene and classify:
+      - matched:     the note points at a real scene number in the script.
+      - unmapped:    the note could not be tied to any scene (scene 0) — vague note,
+                     surfaced but NOT treated as a script mismatch.
+      - out_of_range: the note references a scene number the script does NOT contain
+                     (e.g. 'rewrite scene 99' when the script has 7 scenes). This is a
+                     genuine script-vs-notes mismatch a writer must reconcile, never
+                     silently dropped or forced onto a real scene.
+
+    Returns {n_scenes, scene_numbers, matched:[...], unmapped:[...], out_of_range:[...]},
+    where each list holds {note_index, scene_number, raw_text}. Fully deterministic.
+    """
+    scenes = parse_screenplay_scenes(script_text)
+    valid = {s["scene_number"] for s in scenes}
+    result: dict = {
+        "n_scenes": len(scenes),
+        "scene_numbers": sorted(valid),
+        "matched": [],
+        "unmapped": [],
+        "out_of_range": [],
+    }
+    for idx, n in enumerate(notes or []):
+        raw = _s(n.get("raw_text"))
+        scene_num = _resolve_scene_num(n, raw)
+        entry = {"note_index": idx, "scene_number": scene_num, "raw_text": raw}
+        if scene_num == 0:
+            result["unmapped"].append(entry)
+        elif scene_num in valid:
+            result["matched"].append(entry)
+        else:
+            # A synthetic word-scene key (900+) that has no real numbered scene, or a
+            # numeric reference beyond the script's range, is a mismatch.
+            result["out_of_range"].append(entry)
+    return result
+
+
 def persist_from_raw(script_title: str, raw_lines: list[str],
                      source_type: str = "producer_email",
                      source_author: str = "Producer Email") -> dict:
@@ -199,6 +272,10 @@ def _heuristic_categorize(raw_lines: list[str]) -> list[dict]:
             "scene_number": _resolve_scene_num({}, text),
             "source_type": "producer_email",
             "source_author": "Producer Email",
+            # Low-confidence flag: when no keyword cue was found we fall back to
+            # 'Other'. That is a SOFT miss, never a confident wrong answer — callers
+            # must surface it rather than present it as certain (board task t_464f6b3b).
+            "low_confidence": m is None,
         })
     return out
 
@@ -210,55 +287,172 @@ def query_analytics(project_id: str, draft_version: int = 1) -> dict:
     return ch.analytics_for(project_id, draft_version)
 
 
+# Directional guidance cues used to decide whether two notes *oppose* each other
+# on the same beat. A real conflict is opposing guidance (cut vs expand), not mere
+# agreement or two different observations about one scene.
+_EXPAND_CUES = ("expand", "more", "longer", "add", "raise", "give", "breathe", "develop", "deepen")
+_CUT_CUES = ("cut", "tighten", "trim", "shorten", "reduce", "remove", "less", "shrink", "drop")
+_SELF_CUE = ("again", "still", "as i said", "reiterate")
+
+
+def _guidance(text: str) -> str:
+    """Return 'expand' | 'cut' | 'neutral' based on the strongest directional cue."""
+    low = (text or "").lower()
+    expand = sum(1 for c in _EXPAND_CUES if c in low)
+    cut = sum(1 for c in _CUT_CUES if c in low)
+    if cut > expand:
+        return "cut"
+    if expand > cut:
+        return "expand"
+    return "neutral"
+
+
 def detect_conflicts(notes: list[dict]) -> list[dict]:
     """Heuristic pre-flag of likely conflicting notes.
 
-    Groups notes by their resolved scene/character key (derived from structured fields
-    OR the raw text via _resolve_scene_num) so that prose-only notes like
-    "The opening scene drags" vs "I loved the slow build in the opening" still collide
-    and get flagged as a conflict. Returns list of {note_a_idx, note_b_idx, reason}."""
+    A pair is flagged as a conflict ONLY when BOTH hold:
+      (1) they resolve to the SAME scene/character key (via structured fields or the
+          raw text — so prose-only notes like "the opening drags" vs "let the opening
+          breathe" still collide), AND
+      (2) they carry OPPOSING directional guidance (one says cut/tighten, the other
+          says expand/more) on that beat — i.e. a genuine stakeholder disagreement.
+
+    This deliberately avoids the false positives the naive "any two different lines in
+    a scene" rule produced:
+      - agreement (two readers both say "expand the dinner scene") is NOT a conflict;
+      - a single reviewer restating their own note is NOT a self-conflict;
+      - two different concerns on one scene (dialogue vs pacing) are NOT a conflict
+        unless they are literally opposing on the same action.
+
+    Returns a list of {note_a_idx, note_b_idx, reason}.
+    """
     clashes: list[dict] = []
     by_key: dict[str, list[int]] = {}
     for i, n in enumerate(notes):
         key = str(_resolve_scene_num(n, _s(n.get("raw_text")))) or "general"
         by_key.setdefault(key, []).append(i)
+
     for key, idxs in by_key.items():
+        if key == "general":
+            # The catch-all bucket still needs explicit opposition to count.
+            pass
         for a in range(len(idxs)):
             for b in range(a + 1, len(idxs)):
                 na, nb = notes[idxs[a]], notes[idxs[b]]
-                # conflict when same category but materially different guidance
-                same_cat = (n.get("note_type") or n.get("category") or "") == (
-                    nb.get("note_type") or nb.get("category") or "")
-                if (same_cat or key != "general") and _s(na.get("raw_text")) != _s(nb.get("raw_text")):
-                    clashes.append({
-                        "note_a_idx": idxs[a], "note_b_idx": idxs[b],
-                        "reason": f"Overlapping note on '{key}' with differing guidance.",
-                    })
+                ta, tb = _s(na.get("raw_text")), _s(nb.get("raw_text"))
+                # Never self-flag a reviewer restating themselves.
+                if ta == tb:
+                    continue
+                if any(c in ta.lower() for c in _SELF_CUE) and any(c in tb.lower() for c in _SELF_CUE):
+                    continue
+                ga, gb = _guidance(ta), _guidance(tb)
+                if ga == "neutral" or gb == "neutral":
+                    continue  # no opposing direction -> not a conflict (agreement or side notes)
+                if ga == gb:
+                    continue  # same direction (e.g. both "expand") == agreement, not conflict
+                clashes.append({
+                    "note_a_idx": idxs[a], "note_b_idx": idxs[b],
+                    "reason": f"Opposing guidance on '{key}': "
+                              f"'{ga}' vs '{gb}'.",
+                })
     return clashes
 
 
-def build_checklist(notes: list[dict], conflicts: list[dict]) -> list[dict]:
-    """Assemble a scene-by-scene Draft-2 revision checklist from categorized notes
-    (grouped by scene_ref/scene_id, ordered by severity) plus flagged conflicts.
-    Returns a list of {scene, items:[...], conflicts:[...]}."""
-    by_scene: dict[str, list[dict]] = {}
-    for n in notes:
-        scene = n.get("scene_ref") or n.get("scene_id") or "General"
-        by_scene.setdefault(scene, []).append(n)
+def build_checklist(notes: list[dict], conflicts: list[dict],
+                    known_scenes: set[int] | None = None) -> list[dict]:
+    """Assemble a scene-by-scene Draft-2 revision checklist.
+
+    Contract (board task t_269b581e):
+      - ZERO hallucination: every emitted item carries the verbatim source raw_text
+        and its source note index, so it is traceable to a real ingested note.
+      - Grouped by the RESOLVED integer scene number (via _resolve_scene_num), not a
+        free-text field that the heuristic path never populates.
+      - Upstream-first ordering: within a scene, structure/logic (story-level) come
+        before pacing/character before dialogue/format (line-level); ties broken by
+        severity.
+      - Vague / unmapped notes (scene 0, i.e. no scene could be resolved) are surfaced
+        in a separate 'Unassigned' group, never silently dropped or misassigned.
+      - Notes referencing a scene number NOT in known_scenes (out-of-range) are
+        flagged 'unresolvable' in their item text and grouped under 'Out-of-range',
+        never dropped or merged into a real scene.
+
+    Returns a list of {scene, scene_number, items:[{text, source_index, raw_text,
+    category, severity, unresolvable}], conflicts:[...]}.
+    """
     sev_rank = {"high": 0, "medium": 1, "low": 2}
+    # Upstream-first: story-level categories sort before line-level.
+    cat_rank = {"structure": 0, "logic": 1, "pacing": 2, "character": 3,
+                "dialogue": 4, "format": 5, "other": 6}
+
+    def _scene_key(n: dict) -> int:
+        for k in ("scene_number", "scene_ref", "scene_id"):
+            v = _s(n.get(k))
+            if v.isdigit():
+                return int(v)
+        return _resolve_scene_num(n, _s(n.get("raw_text")))
+
+    # Bucket notes by resolved scene, tagging index for traceability.
+    buckets: dict[str, list[tuple[int, dict, int]]] = {}
+    for idx, n in enumerate(notes):
+        scene_num = _scene_key(n)
+        if scene_num == 0:
+            group = "Unassigned"
+        elif known_scenes is not None and scene_num not in known_scenes:
+            group = "Out-of-range"
+        else:
+            group = str(scene_num)
+        buckets.setdefault(group, []).append((idx, n, scene_num))
+
+    # Map conflicts to the note indices they involve so we can attach per scene.
+    conflict_by_idx: dict[int, list[dict]] = {}
+    for c in conflicts or []:
+        for key in ("note_a_idx", "note_b_idx"):
+            if key in c:
+                conflict_by_idx.setdefault(c[key], []).append(c)
+
+    def _sort_key(entry: tuple[int, dict, int]) -> tuple[int, int]:
+        _idx, n, _sn = entry
+        cat = _s(n.get("note_type") or n.get("category") or "other").lower()
+        sev = _s(n.get("severity") or "medium").lower()
+        return (cat_rank.get(cat, 6), sev_rank.get(sev, 3))
+
+    def _group_order(name: str) -> tuple[int, int]:
+        # Real numbered scenes first (in order), then Unassigned, then Out-of-range.
+        if name.isdigit():
+            return (0, int(name))
+        return ({"Unassigned": 1, "Out-of-range": 2}.get(name, 3), 0)
+
     checklist = []
-    conflict_map = {c.get("note_b_idx"): c for c in conflicts}
-    for scene, ns in by_scene.items():
-        ns_sorted = sorted(ns, key=lambda x: sev_rank.get(x.get("severity", "medium"), 3))
-        items = [
-            f"[{n.get('severity','med')}] {n.get('note_type','note')}: {n.get('raw_text','')[:160]}"
-            for n in ns_sorted
-        ]
-        scene_conflicts = [
-            conflict_map[i]["reason"] for i in range(len(ns_sorted))
-            if i in conflict_map
-        ]
-        checklist.append({"scene": scene, "items": items, "conflicts": scene_conflicts})
+    for group in sorted(buckets, key=_group_order):
+        entries = sorted(buckets[group], key=_sort_key)
+        items = []
+        scene_conflicts: list[str] = []
+        for idx, n, scene_num in entries:
+            unresolvable = group == "Out-of-range"
+            raw = _s(n.get("raw_text"))
+            cat = _s(n.get("note_type") or n.get("category") or "other")
+            sev = _s(n.get("severity") or "medium")
+            prefix = "[UNRESOLVABLE scene ref] " if unresolvable else ""
+            items.append({
+                "text": f"{prefix}[{sev}] {cat}: {raw[:160]}",
+                "source_index": idx,      # traceability -> notes[idx]
+                "raw_text": raw,          # verbatim source, zero hallucination
+                "category": cat,
+                "severity": sev,
+                "scene_number": scene_num,
+                "unresolvable": unresolvable,
+            })
+            for c in conflict_by_idx.get(idx, []):
+                reason = c.get("reason", "conflict")
+                if reason not in scene_conflicts:
+                    scene_conflicts.append(reason)
+        scene_number = int(group) if group.isdigit() else None
+        checklist.append({
+            "scene": group,
+            "scene_number": scene_number,
+            "items": items,
+            "conflicts": scene_conflicts,
+        })
     return checklist
 
 
@@ -268,11 +462,13 @@ write_clickhouse_tool = FunctionTool(write_clickhouse)
 query_analytics_tool = FunctionTool(query_analytics)
 detect_conflicts_tool = FunctionTool(detect_conflicts)
 build_checklist_tool = FunctionTool(build_checklist)
+cross_check_script_scenes_tool = FunctionTool(cross_check_script_scenes)
 
 ALL_TOOLS = [
     parse_notes_tool,
     detect_conflicts_tool,
     build_checklist_tool,
+    cross_check_script_scenes_tool,
     write_clickhouse_tool,
     query_analytics_tool,
 ]
