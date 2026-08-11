@@ -58,8 +58,6 @@ def _get_agent():
 
 def _get_projects() -> list[dict]:
     """Retrieve list of previously processed projects from ClickHouse."""
-    from types import SimpleNamespace
-
     from src.clickhouse import client as ch
     try:
         ch.init_schema()
@@ -70,13 +68,22 @@ def _get_projects() -> list[dict]:
             "ORDER BY last_updated DESC"
         )
         # run_query returns plain dicts in chDB mode but ClickHouseRow objects in
-        # Cloud mode. The template uses attribute access (p.project_id). ClickHouseRow
-        # already supports attribute access, so pass it through; only wrap genuine
-        # dicts as SimpleNamespace. Wrapping a ClickHouseRow via dict(row) would drop
-        # its fields, which is what caused the UndefinedError on index.html:113.
+        # Cloud mode. ClickHouseRow supports attribute access (p.project_id) but its
+        # proxied values may not be plain Python types that Jinja2 can call methods on
+        # (e.g. str.replace). Convert every row to a plain dict with native types so the
+        # template always gets JSON-serializable values. dict(ClickHouseRow) preserves all
+        # fields with their native Python types (clickhouse-connect converts most types
+        # automatically); wrap with str() on text fields as a safety net for any exotic
+        # types (e.g. LowCardinality(String) returning a subclass) that Jinja2's method
+        # call dispatch may not handle.
         out = []
         for r in rows:
-            out.append(r if not isinstance(r, dict) else SimpleNamespace(**r))
+            if isinstance(r, dict):
+                out.append({k: str(v) if isinstance(v, str) else v for k, v in r.items()})
+            else:
+                # ClickHouseRow (Cloud mode) — convert to dict, normalize text fields.
+                d = dict(r)
+                out.append({k: str(v) if isinstance(v, str) else v for k, v in d.items()})
         return out
     except Exception as exc:
         print(f"Failed to fetch projects: {exc}")
@@ -234,29 +241,36 @@ async def analyze(request: Request, file: UploadFile = File(...), title: str = F
 
     try:
         import asyncio
-        from google.genai import types
 
         engine_id = os.getenv("AGENT_ENGINE_ID")
-        content = types.Content(
-            role="user",
-            parts=[types.Part(text=f"Title: {title}\nFeedback file lines:\n" + "\n".join(raw_lines))],
-        )
 
         async def _go() -> str:
             if engine_id:
-                from google.cloud import aiplatform
-                remote = aiplatform.agent_engines.get(engine_id)
+                from vertexai import agent_engines
+                remote = agent_engines.get(engine_id)
+                # stream_query expects message as str or dict, NOT a google.genai
+                # types.Content object. Use the same text format the in-process runner
+                # and run_agent_demo.py use so the agent sees identical input either way.
+                message = f"Title: {title}\nFeedback file lines:\n" + "\n".join(raw_lines)
                 out = ""
-                for event in remote.stream_query(user_id="web", message=content):
+                for event in remote.stream_query(message=message, user_id="web"):
                     if isinstance(event, dict) and event.get("content"):
                         for p in event["content"].get("parts", []) or []:
                             if p.get("text"):
                                 out += p["text"]
+                    elif hasattr(event, "text") and event.text:
+                        out += event.text
                 if not out.strip():
                     from src.clickhouse import client as ch
                     out = _fallback_summary(ch.slugify_project(title))
                 return out
             from google.adk.runners import InMemoryRunner
+            from google.genai import types
+
+            content = types.Content(
+                role="user",
+                parts=[types.Part(text=f"Title: {title}\nFeedback file lines:\n" + "\n".join(raw_lines))],
+            )
             agent = _get_agent()
             runner = InMemoryRunner(agent=agent, app_name="script_matrix")
             session = await runner.session_service.create_session(
