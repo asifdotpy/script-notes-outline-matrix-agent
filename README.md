@@ -14,14 +14,14 @@ An agentic tool for screenwriters that ingests *external, unstructured* feedback
 
 Rules-compliant: automates admin/planning only — it **does not** auto-write creative script text.
 Built on **Gemini via Google ADK on Vertex AI (Agent Engine)**; ClickHouse is used at **runtime** (not just named).
-Auth is **Web2 Google OAuth 2.0** — no web3, no wallets, no crypto.
+Auth is **Google OAuth 2.0** (standard Google sign-in).
 
 ## Build status (this submission)
 
 - **Agent deployed live** to Vertex AI Agent Engine (`AGENT_ENGINE_ID` in `.env`); the Gemini → ClickHouse
   pipeline was run end-to-end and verified (feedback → categorized notes → conflict flags → persisted to ClickHouse).
 - **Tests:** golden dataset + eval harness + suites A–E (ingestion, categorization, conflict detection,
-  checklist, ClickHouse) + script-scene cross-check + Web2 OAuth login — all passing on embedded chDB.
+  checklist, ClickHouse) + script-scene cross-check + OAuth login — all passing on embedded chDB.
 - **CI:** GitHub Actions (`.github/workflows/ci.yml`) runs `pytest` + the eval harness on every push/PR using
   free embedded **chDB** (no ClickHouse Cloud account needed in CI).
 
@@ -76,9 +76,8 @@ fix for Draft 2" list — with everything saved in a real database you can analy
   scene-by-scene note density).
 - **Web UI (FastAPI)** — upload → agent runs → categorized notes, conflicts, checklist, analytics,
   plus **`.fdx` (Final Draft) export** of the revision notes.
-- **Web2 Google OAuth 2.0 sign-in** — the web app is gated by standard Google Identity
-  (Authorization Code flow, ID-token verification). **No web3, no wallets, no crypto** — this is a
-  Web2 Google Cloud project end to end.
+- **Google OAuth 2.0 sign-in** — the web app is gated by standard Google Identity
+  (Authorization Code flow, ID-token verification).
 - **Gemini on Vertex AI Agent Engine** — the agent is deployed to Google Cloud Agent Platform and
   called by the web app in production; verified live this build.
 
@@ -134,7 +133,7 @@ Deploy topology:
   Local dev : FastAPI ──in-process ADK runner──▶ mcp-clickhouse (chDB)
   Prod      : FastAPI (Cloud Run) ──AGENT_ENGINE_ID──▶ Vertex AI Agent Engine
                                                    (same agent) ──▶ mcp-clickhouse ──▶ ClickHouse Cloud
-  Auth      : Web2 Google OAuth 2.0 (Authorization Code flow, ID-token verified) — no web3, no wallets.
+  Auth      : Google OAuth 2.0 (Authorization Code flow, ID-token verified).
               Vertex AI access via Application Default Credentials (SA key / gcloud ADC); no API key.
 ```
 
@@ -154,10 +153,10 @@ uvicorn src.web.app:app --port 8080  # open http://localhost:8080
 > **Auth note:** with no Google OAuth credentials set, the web app runs **open** (no login wall) for
 > local dev/demo. To enable the production sign-in gate, set the `GOOGLE_OAUTH_*` env vars below.
 
-### Authentication (Web2 Google OAuth 2.0 — no web3)
+### Authentication (Google OAuth 2.0)
 
-The web app is protected by **standard Google Identity** (OAuth 2.0 Authorization Code flow). There is
-**no wallet, no blockchain, and no Privy** anywhere in this project — it is a Web2 Google Cloud app.
+The web app is protected by **standard Google Identity** (OAuth 2.0 Authorization Code flow). This is a
+Google Cloud application.
 
 1. In the Google Cloud console, create an **OAuth 2.0 Client ID** (type: Web application) for
    `acinema-hack-0807`, and add `http://localhost:8080/auth/google/callback` as an authorized redirect URI.
@@ -221,7 +220,7 @@ gcloud run deploy script-matrix-web \
 
 ```bash
 uv sync                       # reproducible install (also: pip install -r requirements.txt)
-.venv/bin/python -m pytest -q # golden dataset, suites A–E, cross-check, Web2 OAuth login — all on chDB
+.venv/bin/python -m pytest -q # golden dataset, suites A–E, cross-check, OAuth login — all on chDB
 .venv/bin/python tests/eval_harness.py   # accuracy/precision/recall regression gate vs golden labels
 .venv/bin/python tests/run_demo_golden_path.py --repeat 3   # deterministic demo, 3× consistency check
 ```
@@ -238,7 +237,7 @@ See `docs/demo_script.md` for the 3-minute functional-demo walkthrough (upload �
 src/agent/        ADK agent + tools
 src/clickhouse/   mcp-clickhouse client + schema.sql
 src/ingestion/    PDF + email parsers
-src/web/          FastAPI app + templates (Web2 Google OAuth gate)
+src/web/          FastAPI app + templates (Google OAuth gate)
 deploy/           Agent Engine + Cloud Run configs
 tests/            golden dataset + fixtures + pytest (suites A–E, cross-check, auth)
 docs/             demo script, pitch, provisioning checklist

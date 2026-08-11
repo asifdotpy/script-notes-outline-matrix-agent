@@ -24,9 +24,8 @@ sys.path.insert(0, str(BASE))
 
 from src.ingestion.pdf_parser import parse_pdf, parse_email  # noqa: E402
 
-# Web2 login gate (board task t_5e9f2ba8). This project is WEB2 ONLY (Google Cloud
-# + Gemini + ClickHouse). There is NO web3 / wallet / Privy anywhere — that was a
-# hallucination in the original task text and has been removed. Google OAuth 2.0.
+# Login gate (board task t_5e9f2ba8): Google OAuth 2.0 for this Google Cloud
+# + Gemini + ClickHouse project. See src/web/auth.py.
 from src.web import auth as webauth  # noqa: E402
 
 app = FastAPI(title="Script Notes-to-Outline Matrix Agent")
@@ -110,7 +109,7 @@ async def login_page(request: Request):
     if not webauth._auth_enabled():
         # No Google OAuth creds configured -> app is open (local dev).
         return RedirectResponse(url="/")
-    # Start the Web2 Google OAuth 2.0 Authorization Code flow.
+    # Start the Google OAuth 2.0 Authorization Code flow.
     redirect_uri = request.url_for("auth_callback")
     return await webauth.google_oauth_client().google.authorize_redirect(request, redirect_uri)
 
@@ -120,7 +119,7 @@ async def auth_callback(request: Request):
     if not webauth._auth_enabled():
         return RedirectResponse(url="/", status_code=303)
     token = await webauth.google_oauth_client().google.authorize_access_token(request)
-    # Verify Google's ID token (Web2 identity) against our client id + Google issuer.
+    # Verify Google's ID token against our client id + Google issuer.
     from google.oauth2 import id_token
     from google.auth.transport.urllib3 import Request as GoogleRequest
 

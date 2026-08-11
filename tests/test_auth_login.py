@@ -1,8 +1,7 @@
-"""Web2 Google OAuth login tests (board task t_5e9f2ba8).
+"""Google OAuth 2.0 login tests (board task t_5e9f2ba8).
 
-This project is WEB2 ONLY (Google Cloud + Gemini + ClickHouse). There is NO web3 /
-wallet / Privy anywhere — that was a hallucination in the original task text and has
-been removed. These tests lock in the Google OAuth 2.0 Authorization Code flow:
+These tests lock in the Google OAuth 2.0 Authorization Code flow for this
+Google Cloud + Gemini + ClickHouse project:
   - auth disabled when GOOGLE_OAUTH_CLIENT_ID/SECRET unset (open for local dev)
   - signed session cookie accepted / rejected (missing, tampered, expired)
   - email allow-list enforcement

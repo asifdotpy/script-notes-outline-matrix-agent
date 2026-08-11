@@ -1,10 +1,7 @@
-"""Web2 login gate for the Agentic Cinema web app (board task t_5e9f2ba8).
+"""Google OAuth 2.0 login gate for the Agentic Cinema web app (board task t_5e9f2ba8).
 
-This project is WEB2 ONLY (Google Cloud + Gemini + ClickHouse screenwriting agent).
-There is NO web3, NO wallet, NO crypto anywhere. The original task text mentioned
-"Privy" (a web3 embedded-wallet vendor) — that was a hallucination in the task body
-and does not apply. We implement standard Google OAuth 2.0 sign-in, the Web2 auth
-that fits the existing server-rendered Jinja / FastAPI stack.
+Standard Google Identity sign-in for this Google Cloud + Gemini + ClickHouse
+screenwriting agent, built on the existing server-rendered Jinja / FastAPI stack.
 
 Auth model:
   - Google OAuth 2.0 Authorization Code flow (server-side, no implicit/client-only).
@@ -17,8 +14,6 @@ Auth model:
     DISABLED (the app is open) so local dev / demos without credentials work.
   - Optional allow-list: if GOOGLE_ALLOWED_EMAILS is set (comma-separated), only
     those Google accounts may sign in (everyone else is rejected after OAuth).
-
-No third-party wallet SDKs, no blockchain, no Privy. Pure Web2 Google identity.
 """
 from __future__ import annotations
 
@@ -31,13 +26,13 @@ import time
 from fastapi import Request, HTTPException
 from starlette.responses import Response  # noqa: F401 (re-exported for app.py)
 
-from authlib.integrations.starlette_client import OAuth  # Web2 OAuth client
+from authlib.integrations.starlette_client import OAuth  # OAuth client
 
 _COOKIE_NAME = "ac_session"
 _MAX_AGE = 60 * 60 * 12  # 12h
 _CLOCK_SKEW = 60
 
-# Google OAuth 2.0 — Web2 identity provider.
+# Google OAuth 2.0 identity provider.
 _oauth = OAuth()
 _oauth.register(
     name="google",
