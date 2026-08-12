@@ -263,15 +263,18 @@
                 </span>
               </div>
             </div>
-            <!-- Card 4: Affected Scenes -->
+            <!-- Card 4: Revision Risk Score -->
             <div class="bg-white rounded-2xl border border-slate-200 p-6 flex items-center space-x-5 shadow-sm">
-              <div class="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-xl shrink-0">
-                <i class="fa-solid fa-clapperboard"></i>
+              <div class="w-12 h-12 rounded-xl {% if analytics.revision_risk_score.risk_level == 'red' %}bg-rose-50 text-rose-600{% elif analytics.revision_risk_score.risk_level == 'amber' %}bg-amber-50 text-amber-600{% else %}bg-emerald-50 text-emerald-600{% endif %} flex items-center justify-center text-xl shrink-0">
+                <i class="fa-solid fa-gauge-high"></i>
               </div>
               <div>
-                <span class="block text-xs font-semibold text-slate-400 uppercase tracking-wider">Affected Scenes</span>
-                <span class="text-2xl font-bold text-slate-800">
-                  {{ analytics.scene_density | length if analytics and analytics.scene_density else 0 }}
+                <span class="block text-xs font-semibold text-slate-400 uppercase tracking-wider">Revision Risk Score</span>
+                <span class="text-2xl font-bold {% if analytics.revision_risk_score.risk_level == 'red' %}text-rose-700{% elif analytics.revision_risk_score.risk_level == 'amber' %}text-amber-700{% else %}text-emerald-700{% endif %}">
+                  {{ analytics.revision_risk_score.risk_score }}
+                </span>
+                <span class="text-2xs font-semibold px-2 py-0.5 rounded-full {% if analytics.revision_risk_score.risk_level == 'red' %}bg-rose-100 text-rose-700{% elif analytics.revision_risk_score.risk_level == 'amber' %}bg-amber-100 text-amber-700{% else %}bg-emerald-100 text-emerald-700{% endif %} mt-1 inline-block">
+                  {{ analytics.revision_risk_score.risk_level | upper }}
                 </span>
               </div>
             </div>
@@ -295,6 +298,10 @@
               <button onclick="switchTab('tab-analytics')" id="btn-tab-analytics" class="tab-button border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300 py-4 px-1 border-b-2 font-semibold text-sm flex items-center space-x-2">
                 <i class="fa-solid fa-chart-line"></i>
                 <span>ClickHouse Live Analytics</span>
+              </button>
+              <button onclick="switchTab('tab-benchmarks')" id="btn-tab-benchmarks" class="tab-button border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300 py-4 px-1 border-b-2 font-semibold text-sm flex items-center space-x-2">
+                <i class="fa-solid fa-globe"></i>
+                <span>Cross-Project Benchmarks</span>
               </button>
               {% if result %}
                 <button onclick="switchTab('tab-raw-output')" id="btn-tab-raw-output" class="tab-button border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300 py-4 px-1 border-b-2 font-semibold text-sm flex items-center space-x-2">
@@ -505,37 +512,178 @@
 
             <!-- Tab 4: Live Analytics Charts -->
             <div id="tab-analytics" class="tab-content hidden">
+              <!-- Revision Risk Gauge -->
+              <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 mb-8">
+                <div class="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+                  <h3 class="font-bold text-slate-800 text-sm">Revision Risk Score</h3>
+                  <span class="text-3xs bg-slate-100 px-2 py-0.5 text-slate-500 rounded font-semibold uppercase tracking-wide">ClickHouse Analytics</span>
+                </div>
+                <div class="flex items-center gap-6 flex-wrap">
+                  <div class="flex-1 min-w-[200px]">
+                    <canvas id="chart-risk-gauge"></canvas>
+                  </div>
+                  <div class="space-y-2 text-xs text-slate-600">
+                    <div class="flex justify-between"><span>Critical ratio (40%)</span><span class="font-medium text-slate-800">{{ "%.1f"|format(analytics.revision_risk_score.components.critical_ratio * 100) }}%</span></div>
+                    <div class="flex justify-between"><span>Conflict rate (30%)</span><span class="font-medium text-slate-800">{{ "%.1f"|format(analytics.revision_risk_score.components.conflict_rate * 100) }}%</span></div>
+                    <div class="flex justify-between"><span>Notes density (20%)</span><span class="font-medium text-slate-800">{{ "%.1f"|format(analytics.revision_risk_score.components.notes_density_score * 100) }}%</span></div>
+                    <div class="flex justify-between"><span>Stakeholder fragility (10%)</span><span class="font-medium text-slate-800">{{ "%.1f"|format(analytics.revision_risk_score.components.stakeholder_fragility_score * 100) }}%</span></div>
+                    <div class="border-t border-slate-200 pt-2 mt-2 flex justify-between font-bold text-sm">
+                      <span>Composite Score</span>
+                      <span class="{% if analytics.revision_risk_score.risk_level == 'red' %}text-rose-700{% elif analytics.revision_risk_score.risk_level == 'amber' %}text-amber-700{% else %}text-emerald-700{% endif %}">{{ analytics.revision_risk_score.risk_score }}/100</span>
+                    </div>
+                    <div class="text-2xs text-slate-400 italic mt-1">Formula: 40×critical + 30×conflict + 20×density + 10×fragility. Transparent heuristic, not ML.</div>
+                  </div>
+                </div>
+              </div>
+
               <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <!-- Chart 1: Scene Density -->
+                <!-- Chart 1: Severity Heatmap -->
                 <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
                   <div class="flex items-center justify-between border-b border-slate-100 pb-3">
-                    <h3 class="font-bold text-slate-800 text-sm">Note & Conflict Density per Scene</h3>
+                    <h3 class="font-bold text-slate-800 text-sm">Severity Heatmap by Scene</h3>
                     <span class="text-3xs bg-slate-100 px-2 py-0.5 text-slate-500 rounded font-semibold uppercase tracking-wide">ClickHouse Analytics</span>
                   </div>
                   <div class="h-64 relative">
-                    <canvas id="chart-scene-density"></canvas>
+                    <canvas id="chart-severity-heatmap"></canvas>
                   </div>
                 </div>
 
-                <!-- Chart 2: Category Breakdown -->
+                <!-- Chart 2: Category x Severity Matrix -->
                 <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
                   <div class="flex items-center justify-between border-b border-slate-100 pb-3">
-                    <h3 class="font-bold text-slate-800 text-sm">Feedback Category Distribution</h3>
+                    <h3 class="font-bold text-slate-800 text-sm">Category x Severity Matrix</h3>
+                    <span class="text-3xs bg-slate-100 px-2 py-0.5 text-slate-500 rounded font-semibold uppercase tracking-wide">ClickHouse Analytics</span>
+                  </div>
+                  <div class="h-64 relative">
+                    <canvas id="chart-category-severity"></canvas>
+                  </div>
+                </div>
+
+                <!-- Chart 3: Stakeholder Influence -->
+                <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4 md:col-span-2">
+                  <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                    <h3 class="font-bold text-slate-800 text-sm">Stakeholder Influence Map</h3>
+                    <span class="text-3xs bg-slate-100 px-2 py-0.5 text-slate-500 rounded font-semibold uppercase tracking-wide">ClickHouse Analytics</span>
+                  </div>
+                  <div class="h-64 relative">
+                    <canvas id="chart-stakeholder-influence"></canvas>
+                  </div>
+                </div>
+
+                <!-- Chart 4: Conflict Type Breakdown -->
+                <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
+                  <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                    <h3 class="font-bold text-slate-800 text-sm">Conflict Type Breakdown</h3>
                     <span class="text-3xs bg-slate-100 px-2 py-0.5 text-slate-500 rounded font-semibold uppercase tracking-wide">ClickHouse Analytics</span>
                   </div>
                   <div class="h-64 relative flex items-center justify-center">
-                    <canvas id="chart-categories" class="max-h-full"></canvas>
+                    <canvas id="chart-conflict-type" class="max-h-full"></canvas>
                   </div>
                 </div>
 
-                <!-- Chart 3: Source Disagreement -->
-                <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4 md:col-span-2">
+                <!-- Chart 5: Conflict Aging -->
+                <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
                   <div class="flex items-center justify-between border-b border-slate-100 pb-3">
-                    <h3 class="font-bold text-slate-800 text-sm">Stakeholder Critical Ratio by Category</h3>
+                    <h3 class="font-bold text-slate-800 text-sm">Unresolved Conflict Aging</h3>
                     <span class="text-3xs bg-slate-100 px-2 py-0.5 text-slate-500 rounded font-semibold uppercase tracking-wide">ClickHouse Analytics</span>
                   </div>
                   <div class="h-64 relative">
-                    <canvas id="chart-stakeholder-ratio"></canvas>
+                    <canvas id="chart-conflict-aging"></canvas>
+                  </div>
+                </div>
+
+                <!-- Chart 6: Draft Progression -->
+                <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4 md:col-span-2">
+                  <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                    <h3 class="font-bold text-slate-800 text-sm">Draft Progression</h3>
+                    <span class="text-3xs bg-slate-100 px-2 py-0.5 text-slate-500 rounded font-semibold uppercase tracking-wide">ClickHouse Analytics</span>
+                  </div>
+                  <div class="h-64 relative">
+                    <canvas id="chart-draft-progression"></canvas>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Quick stats row -->
+              <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mt-8">
+                <div class="bg-white rounded-xl border border-slate-200 p-4 text-center">
+                  <div class="text-2xl font-bold text-slate-800">{{ analytics.expected_scenes_to_revise.all_scenes_with_activity }}</div>
+                  <div class="text-2xs text-slate-500 uppercase tracking-wider mt-1">Scenes to Revise</div>
+                </div>
+                <div class="bg-white rounded-xl border border-slate-200 p-4 text-center">
+                  <div class="text-2xl font-bold text-amber-600">{{ analytics.expected_scenes_to_revise.scenes_with_conflicts }}</div>
+                  <div class="text-2xs text-slate-500 uppercase tracking-wider mt-1">Scene Conflicts</div>
+                </div>
+                <div class="bg-white rounded-xl border border-slate-200 p-4 text-center">
+                  <div class="text-2xl font-bold text-emerald-600">{{ "%.0f"|format(analytics.stakeholder_alignment.alignment_ratio * 100) }}%</div>
+                  <div class="text-2xs text-slate-500 uppercase tracking-wider mt-1">Stakeholder Alignment</div>
+                </div>
+                <div class="bg-white rounded-xl border border-slate-200 p-4 text-center">
+                  <div class="text-2xl font-bold text-rose-600">{{ analytics.conflict_aging.summary.avg_hours_open }}h</div>
+                  <div class="text-2xs text-slate-500 uppercase tracking-wider mt-1">Avg Unresolved Hours</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Tab 4b: Cross-Project Benchmarks -->
+            <div id="tab-benchmarks" class="tab-content hidden">
+              <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 mb-8">
+                <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <h3 class="font-bold text-slate-800 text-sm">Cross-Project Benchmarks</h3>
+                  <span class="text-3xs bg-slate-100 px-2 py-0.5 text-slate-500 rounded font-semibold uppercase tracking-wide">ClickHouse Analytics · All Projects</span>
+                </div>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
+                  <div class="bg-indigo-50 rounded-xl p-4 text-center border border-indigo-100">
+                    <div class="text-2xl font-bold text-indigo-700">{{ benchmarks.headline.total_projects }}</div>
+                    <div class="text-2xs text-indigo-600 uppercase tracking-wider mt-1">Total Projects</div>
+                  </div>
+                  <div class="bg-indigo-50 rounded-xl p-4 text-center border border-indigo-100">
+                    <div class="text-2xl font-bold text-indigo-700">{{ benchmarks.headline.total_notes }}</div>
+                    <div class="text-2xs text-indigo-600 uppercase tracking-wider mt-1">Total Notes Ingest...</div>
+                  </div>
+                  <div class="bg-amber-50 rounded-xl p-4 text-center border border-amber-100">
+                    <div class="text-2xl font-bold text-amber-700">{{ benchmarks.headline.total_conflicts }}</div>
+                    <div class="text-2xs text-amber-600 uppercase tracking-wider mt-1">Total Conflicts</div>
+                  </div>
+                  <div class="bg-slate-50 rounded-xl p-4 text-center border border-slate-200">
+                    <div class="text-2xl font-bold text-slate-700">{{ "%.1f"|format(benchmarks.headline.global_conflict_rate * 100) }}%</div>
+                    <div class="text-2xs text-slate-600 uppercase tracking-wider mt-1">Global Conflict Rate</div>
+                  </div>
+                </div>
+                <div class="text-2xs text-slate-400 mt-3 italic">Aggregated across all scripts in this ClickHouse instance. No raw note text crosses project boundaries — only counts and ratios.</div>
+              </div>
+
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <!-- Risk Leaderboard -->
+                <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
+                  <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                    <h3 class="font-bold text-slate-800 text-sm">Highest-Risk Projects</h3>
+                    <span class="text-3xs bg-slate-100 px-2 py-0.5 text-slate-500 rounded font-semibold uppercase tracking-wide">ClickHouse Analytics</span>
+                  </div>
+                  <div class="h-64 relative">
+                    <canvas id="chart-risk-leaderboard"></canvas>
+                  </div>
+                </div>
+
+                <!-- Global Category Distribution -->
+                <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
+                  <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                    <h3 class="font-bold text-slate-800 text-sm">Global Category Distribution</h3>
+                    <span class="text-3xs bg-slate-100 px-2 py-0.5 text-slate-500 rounded font-semibold uppercase tracking-wide">ClickHouse Analytics</span>
+                  </div>
+                  <div class="h-64 relative flex items-center justify-center">
+                    <canvas id="chart-global-categories" class="max-h-full"></canvas>
+                  </div>
+                </div>
+
+                <!-- Global Conflict Type Distribution -->
+                <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4 md:col-span-2">
+                  <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                    <h3 class="font-bold text-slate-800 text-sm">Global Conflict Type Distribution</h3>
+                    <span class="text-3xs bg-slate-100 px-2 py-0.5 text-slate-500 rounded font-semibold uppercase tracking-wide">ClickHouse Analytics</span>
+                  </div>
+                  <div class="h-64 relative">
+                    <canvas id="chart-global-conflict-type"></canvas>
                   </div>
                 </div>
               </div>
@@ -563,7 +711,7 @@
 
   <!-- JSON Payload storage -->
   <script id="analytics-payload" type="application/json">
-    {{ analytics | tojson | safe if analytics else "{}" }}
+    {{ (analytics | default({}) | combine({'benchmarks': benchmarks | default({})}) ) | tojson | safe if analytics or benchmarks else "{}" }}
   </script>
   <script id="checklist-payload" type="application/json">
     {{ checklist | tojson | safe if checklist else "[]" }}
@@ -814,7 +962,7 @@
         });
       }
 
-      // 3. Stakeholder Ratio Chart
+      // 3. Stakeholder Ratio Chart (original)
       const sources = disagreement.map(r => r.source_type + ' - ' + r.category);
       const notesVolume = disagreement.map(r => r.note_count);
       const ratios = disagreement.map(r => r.critical_ratio * 100);
@@ -837,6 +985,369 @@
               {
                 label: 'Critical Ratio (%)',
                 data: ratios,
+                type: 'line',
+                borderColor: 'rgb(239, 68, 68)',
+                backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                borderWidth: 2,
+                pointBackgroundColor: 'rgb(239, 68, 68)',
+                yAxisID: 'y1'
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+              y: {
+                beginAtZero: true,
+                position: 'left',
+                grid: { color: '#f1f5f9' },
+                ticks: { color: '#64748b', font: { size: 10 } }
+              },
+              y1: {
+                beginAtZero: true,
+                max: 100,
+                position: 'right',
+                grid: { display: false },
+                ticks: { color: '#64748b', font: { size: 10 } }
+              },
+              x: {
+                grid: { display: false },
+                ticks: { color: '#64748b', font: { size: 9 } }
+              }
+            },
+            plugins: {
+              legend: { labels: { color: '#475569', font: { size: 11, weight: 'bold' } } }
+            }
+          }
+        });
+      }
+
+      // 4. Severity Heatmap (stacked bar by scene)
+      const severityHeatmap = analyticsPayload.severity_heatmap || [];
+      const heatScenes = [...new Set(severityHeatmap.map(r => r.scene_number))].sort((a,b) => a-b);
+      const heatSeverities = ['Minor', 'Major', 'Critical'];
+      const heatColors = {
+        'Minor': 'rgba(100, 116, 139, 0.7)',
+        'Major': 'rgba(245, 158, 11, 0.7)',
+        'Critical': 'rgba(239, 68, 68, 0.7)'
+      };
+      const heatDatasets = heatSeverities.map(sev => ({
+        label: sev,
+        data: heatScenes.map(scene => {
+          const row = severityHeatmap.find(r => r.scene_number === scene && r.severity === sev);
+          return row ? row.note_count : 0;
+        }),
+        backgroundColor: heatColors[sev],
+        borderColor: sev === 'Critical' ? 'rgb(239, 68, 68)' : sev === 'Major' ? 'rgb(245, 158, 11)' : 'rgb(100, 116, 139)',
+        borderWidth: 1,
+        borderRadius: 2
+      }));
+
+      const ctxHeat = document.getElementById('chart-severity-heatmap');
+      if (ctxHeat && heatDatasets.some(ds => ds.data.some(d => d > 0))) {
+        new Chart(ctxHeat, {
+          type: 'bar',
+          data: {
+            labels: heatScenes.map(s => 'Scene ' + s),
+            datasets: heatDatasets
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+              x: { stacked: true, grid: { display: false }, ticks: { color: '#64748b', font: { size: 10 } } },
+              y: { stacked: true, beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { stepSize: 1, color: '#64748b', font: { size: 10 } } }
+            },
+            plugins: { legend: { labels: { color: '#475569', font: { size: 11, weight: 'bold' } } } }
+          }
+        });
+      }
+
+      // 5. Category x Severity Matrix (grouped bar)
+      const catMatrix = analyticsPayload.category_severity_matrix || [];
+      const catNames = [...new Set(catMatrix.map(r => r.category))].sort();
+      const catDatasets = heatSeverities.map(sev => ({
+        label: sev,
+        data: catNames.map(cat => {
+          const row = catMatrix.find(r => r.category === cat && r.severity === sev);
+          return row ? row.note_count : 0;
+        }),
+        backgroundColor: heatColors[sev],
+        borderColor: sev === 'Critical' ? 'rgb(239, 68, 68)' : sev === 'Major' ? 'rgb(245, 158, 11)' : 'rgb(100, 116, 139)',
+        borderWidth: 1,
+        borderRadius: 2
+      }));
+
+      const ctxCatSev = document.getElementById('chart-category-severity');
+      if (ctxCatSev && catDatasets.some(ds => ds.data.some(d => d > 0))) {
+        new Chart(ctxCatSev, {
+          type: 'bar',
+          data: { labels: catNames, datasets: catDatasets },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            scales: {
+              x: { stacked: false, grid: { display: false }, ticks: { color: '#64748b', font: { size: 10 } } },
+              y: { stacked: false, beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { stepSize: 1, color: '#64748b', font: { size: 10 } } }
+            },
+            plugins: { legend: { labels: { color: '#475569', font: { size: 11, weight: 'bold' } } } }
+          }
+        });
+      }
+
+      // 6. Stakeholder Influence Map (grouped bar: total + critical per author)
+      const stakeholderData = analyticsPayload.stakeholder_influence || [];
+      const authorLabels = stakeholderData.map(r => r.source_author);
+      const authorTotalNotes = stakeholderData.map(r => r.total_notes);
+      const authorCriticalNotes = stakeholderData.map(r => r.critical_notes);
+
+      const ctxInfluence = document.getElementById('chart-stakeholder-influence');
+      if (ctxInfluence) {
+        new Chart(ctxInfluence, {
+          type: 'bar',
+          data: {
+            labels: authorLabels,
+            datasets: [
+              { label: 'Total Notes', data: authorTotalNotes, backgroundColor: 'rgba(99, 102, 241, 0.7)', borderColor: 'rgb(99, 102, 241)', borderWidth: 1.5, borderRadius: 4 },
+              { label: 'Critical Notes', data: authorCriticalNotes, backgroundColor: 'rgba(239, 68, 68, 0.7)', borderColor: 'rgb(239, 68, 68)', borderWidth: 1.5, borderRadius: 4 }
+            ]
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            scales: {
+              y: { beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { stepSize: 1, color: '#64748b', font: { size: 10 } } },
+              x: { grid: { display: false }, ticks: { color: '#64748b', font: { size: 9 } } }
+            },
+            plugins: { legend: { labels: { color: '#475569', font: { size: 11, weight: 'bold' } } } }
+          }
+        });
+      }
+
+      // 7. Conflict Type Breakdown (doughnut)
+      const conflictTypes = analyticsPayload.conflict_type_breakdown || [];
+      const ctLabels = conflictTypes.map(r => r.conflict_type);
+      const ctTotalData = conflictTypes.map(r => r.total_conflicts);
+      const ctUnresolvedData = conflictTypes.map(r => r.unresolved_count);
+
+      const ctxCT = document.getElementById('chart-conflict-type');
+      if (ctxCT && ctLabels.length > 0) {
+        new Chart(ctxCT, {
+          type: 'doughnut',
+          data: {
+            labels: ctLabels.map((l, i) => `${l} (total: ${ctTotalData[i]}, open: ${ctUnresolvedData[i]})`),
+            datasets: [{
+              data: ctTotalData,
+              backgroundColor: [
+                'rgba(239, 68, 68, 0.75)',
+                'rgba(245, 158, 11, 0.75)',
+                'rgba(99, 102, 241, 0.75)',
+                'rgba(100, 116, 139, 0.75)'
+              ],
+              borderWidth: 1.5, borderColor: '#ffffff'
+            }]
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+              legend: { position: 'right', labels: { boxWidth: 12, font: { size: 10, weight: 'medium' }, color: '#475569', padding: 8 } }
+            },
+            cutout: '65%'
+          }
+        });
+      }
+
+      // 8. Conflict Aging (bar chart of unresolved hours)
+      const agingData = analyticsPayload.conflict_aging || {};
+      const agingSummary = agingData.summary || {};
+      const agingBuckets = agingData.buckets || [];
+      const agingLabels = ['0-6h', '6-24h', '1-3d', '3-7d', '7-14d', '14d+'];
+      const agingBucketKeys = ['h_0_6', 'h_6_24', 'd_1_3', 'd_3_7', 'd_7_14', 'd_14_plus'];
+
+      // Aggregate across all conflict types
+      const agingAggregated = agingLabels.map((label, i) => {
+        const key = agingBucketKeys[i];
+        return agingBuckets.reduce((sum, b) => sum + (intVal(b[key]) || 0), 0);
+      });
+
+      function intVal(v) { return typeof v === 'number' ? v : (parseInt(v) || 0); }
+
+      const ctxAging = document.getElementById('chart-conflict-aging');
+      if (ctxAging && agingAggregated.some(v => v > 0)) {
+        new Chart(ctxAging, {
+          type: 'bar',
+          data: {
+            labels: agingLabels,
+            datasets: [{
+              label: 'Unresolved Conflicts',
+              data: agingAggregated,
+              backgroundColor: 'rgba(245, 158, 11, 0.7)',
+              borderColor: 'rgb(245, 158, 11)',
+              borderWidth: 1.5, borderRadius: 4
+            }]
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            scales: {
+              y: { beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { stepSize: 1, color: '#64748b', font: { size: 10 } } },
+              x: { grid: { display: false }, ticks: { color: '#64748b', font: { size: 10 } } }
+            },
+            plugins: { legend: { labels: { color: '#475569', font: { size: 11, weight: 'bold' } } } }
+          }
+        });
+      }
+
+      // 9. Draft Progression (line chart)
+      const progression = analyticsPayload.draft_progression || {};
+      const draftNotes = progression.notes || [];
+      const draftConflicts = progression.conflicts || [];
+
+      // Merge by draft_version
+      const draftMap = new Map();
+      draftNotes.forEach(r => {
+        const v = r.draft_version;
+        if (!draftMap.has(v)) draftMap.set(v, { draft_version: v, total_notes: 0, conflict_scenes: 0, total_conflicts: 0 });
+        draftMap.get(v).total_notes = r.total_notes;
+      });
+      draftConflicts.forEach(r => {
+        const v = r.draft_version;
+        if (!draftMap.has(v)) draftMap.set(v, { draft_version: v, total_notes: 0, conflict_scenes: 0, total_conflicts: 0 });
+        draftMap.get(v).conflict_scenes = r.conflict_scenes;
+        draftMap.get(v).total_conflicts = r.total_conflicts;
+      });
+
+      const progLabels = [...draftMap.keys()].sort().map(v => 'Draft ' + v);
+      const progNotes = [...draftMap.values()].sort((a,b) => a.draft_version - b.draft_version).map(r => r.total_notes);
+      const progConflicts = [...draftMap.values()].sort((a,b) => a.draft_version - b.draft_version).map(r => r.total_conflicts);
+
+      const ctxProg = document.getElementById('chart-draft-progression');
+      if (ctxProg && (progNotes.some(n => n > 0) || progConflicts.some(c => c > 0))) {
+        new Chart(ctxProg, {
+          type: 'line',
+          data: {
+            labels: progLabels,
+            datasets: [
+              { label: 'Total Notes', data: progNotes, borderColor: 'rgb(99, 102, 241)', backgroundColor: 'rgba(99, 102, 241, 0.1)', fill: true, tension: 0.3, pointRadius: 5, pointBackgroundColor: 'rgb(99, 102, 241)' },
+              { label: 'Total Conflicts', data: progConflicts, borderColor: 'rgb(239, 68, 68)', backgroundColor: 'rgba(239, 68, 68, 0.1)', fill: true, tension: 0.3, pointRadius: 5, pointBackgroundColor: 'rgb(239, 68, 68)' }
+            ]
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            scales: {
+              y: { beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { color: '#64748b', font: { size: 10 } } },
+              x: { grid: { display: false }, ticks: { color: '#64748b', font: { size: 10 } } }
+            },
+            plugins: { legend: { labels: { color: '#475569', font: { size: 11, weight: 'bold' } } } }
+          }
+        });
+      }
+
+      // ---- Cross-Project Benchmarks Charts ----
+
+      // 10. Risk Leaderboard (horizontal bar)
+      const benchmarksPayload = JSON.parse(document.getElementById('analytics-payload').textContent || '{}');
+      const benchmarks = benchmarksPayload.benchmarks || {};
+      const leaderboard = benchmarks.risk_leaderboard || [];
+
+      const lbLabels = leaderboard.map(r => r.project_id.replace(/^test-/, '').replace(/-/g, ' ').substring(0, 18));
+      const lbScores = leaderboard.map(r => r.risk_score);
+      const lbNotes = leaderboard.map(r => r.total_notes);
+
+      const ctxLB = document.getElementById('chart-risk-leaderboard');
+      if (ctxLB && lbLabels.length > 0) {
+        new Chart(ctxLB, {
+          type: 'bar',
+          data: {
+            labels: lbLabels,
+            datasets: [
+              { label: 'Risk Score', data: lbScores, backgroundColor: lbScores.map(s => s > 65 ? 'rgba(239, 68, 68, 0.7)' : s > 35 ? 'rgba(245, 158, 11, 0.7)' : 'rgba(16, 185, 129, 0.7)'), borderColor: lbScores.map(s => s > 65 ? 'rgb(239, 68, 68)' : s > 35 ? 'rgb(245, 158, 11)' : 'rgb(16, 185, 129)'), borderWidth: 1.5, borderRadius: 4 },
+              { label: 'Total Notes', data: lbNotes, type: 'line', borderColor: 'rgb(99, 102, 241)', borderWidth: 2, pointBackgroundColor: 'rgb(99, 102, 241)', yAxisID: 'y1' }
+            ]
+          },
+          options: {
+            indexAxis: 'y',
+            responsive: true, maintainAspectRatio: false,
+            scales: {
+              x: { beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { color: '#64748b', font: { size: 10 } } },
+              y1: { beginAtZero: true, position: 'right', grid: { display: false }, ticks: { color: '#64748b', font: { size: 9 } } },
+              y: { grid: { display: false }, ticks: { color: '#64748b', font: { size: 9 } } }
+            },
+            plugins: { legend: { labels: { color: '#475569', font: { size: 11, weight: 'bold' } } } }
+          }
+        });
+      }
+
+      // 11. Global Category Distribution (doughnut)
+      const globalCatDist = benchmarks.global_category_dist || [];
+      const gCatLabels = globalCatDist.map(r => r.category);
+      const gCatData = globalCatDist.map(r => r.note_count);
+
+      const ctxGCat = document.getElementById('chart-global-categories');
+      if (ctxGCat && gCatLabels.length > 0) {
+        new Chart(ctxGCat, {
+          type: 'doughnut',
+          data: {
+            labels: gCatLabels,
+            datasets: [{
+              data: gCatData,
+              backgroundColor: [
+                'rgba(99, 102, 241, 0.75)',
+                'rgba(236, 72, 153, 0.75)',
+                'rgba(20, 184, 166, 0.75)',
+                'rgba(245, 158, 11, 0.75)',
+                'rgba(139, 92, 246, 0.75)',
+                'rgba(100, 116, 139, 0.75)'
+              ],
+              borderWidth: 1.5, borderColor: '#ffffff'
+            }]
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { position: 'right', labels: { boxWidth: 12, font: { size: 10, weight: 'medium' }, color: '#475569', padding: 8 } } },
+            cutout: '65%'
+          }
+        });
+      }
+
+      // 12. Global Conflict Type Distribution (bar)
+      const globalCTDist = benchmarks.global_conflict_type_dist || [];
+      const gCTLabels = globalCTDist.map(r => r.conflict_type);
+      const gCTData = globalCTDist.map(r => r.conflict_count);
+
+      const ctxGCT = document.getElementById('chart-global-conflict-type');
+      if (ctxGCT && gCTLabels.length > 0) {
+        new Chart(ctxGCT, {
+          type: 'bar',
+          data: {
+            labels: gCTLabels,
+            datasets: [{
+              label: 'Conflict Count',
+              data: gCTData,
+              backgroundColor: [
+                'rgba(239, 68, 68, 0.7)',
+                'rgba(245, 158, 11, 0.7)',
+                'rgba(99, 102, 241, 0.7)',
+                'rgba(100, 116, 139, 0.7)'
+              ],
+              borderColor: [
+                'rgb(239, 68, 68)',
+                'rgb(245, 158, 11)',
+                'rgb(99, 102, 241)',
+                'rgb(100, 116, 139)'
+              ],
+              borderWidth: 1.5, borderRadius: 4
+            }]
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            scales: {
+              y: { beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { stepSize: 1, color: '#64748b', font: { size: 10 } } },
+              x: { grid: { display: false }, ticks: { color: '#64748b', font: { size: 10 } } }
+            },
+            plugins: { legend: { display: false } }
+          }
+        });
+      }
+    });
                 type: 'line',
                 borderColor: 'rgb(239, 68, 68)',
                 backgroundColor: 'rgba(239, 68, 68, 0.1)',
