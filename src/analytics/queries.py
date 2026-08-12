@@ -561,7 +561,7 @@ def global_benchmarks() -> dict:
     """)
     total_scenes_notes_global = int((notes_rows2[0].get("total_scenes_with_notes") or 0) if notes_rows2 else 0)
     scenes_conflicts_global = int((conflict_scenes_rows[0].get("scenes_with_conflicts_anywhere") or 0) if conflict_scenes_rows else 0)
-    global_conflict_rate = round(scenes_conflicts_global / max(1, scenes_notes_global), 3)
+    global_conflict_rate = round(scenes_conflicts_global / max(1, total_scenes_notes_global), 3)
 
     return {
         "headline": {
