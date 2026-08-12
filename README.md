@@ -9,8 +9,11 @@ An agentic tool for screenwriters that ingests *external, unstructured* feedback
 2. **Flags conflicting** notes (e.g. one reader says "cut the dinner scene", another says "expand it").
 3. **Builds a scene-by-scene Draft-2 revision checklist** — highest-severity items first, conflicts called out per scene.
 4. **Persists** the notes-matrix + conflict flags into **ClickHouse** via the official
-   `mcp-clickhouse` MCP server, and serves **live analytics** (note-category frequencies,
-   conflict rates, scene coverage).
+   `mcp-clickhouse` MCP server, and serves **live analytics** — a 12-chart dashboard
+   covering scene/severity heatmaps, category×severity matrices, stakeholder influence,
+   conflict-type breakdowns, conflict aging, draft progression, a transparent 0–100
+   Revision Risk Score, expected-scenes-to-revise estimates, stakeholder alignment, and
+   cross-project benchmarks (headline stats + highest-risk-projects leaderboard).
 
 Rules-compliant: automates admin/planning only — it **does not** auto-write creative script text.
 Built on **Gemini via Google ADK on Vertex AI (Agent Engine)**; ClickHouse is used at **runtime** (not just named).
@@ -87,8 +90,12 @@ fix for Draft 2" list — with everything saved in a real database you can analy
   (e.g. "cut the intro" vs "let it breathe").
 - **Draft-2 revision checklist** — scene-by-scene, severity-ordered, conflicts highlighted per scene.
 - **Runtime ClickHouse persistence** — `notes_raw` + `notes_conflicts` tables via the official
-  `mcp-clickhouse` server, with relational analytics (category breakdowns, conflict ratios,
-  scene-by-scene note density).
+  `mcp-clickhouse` server, with relational analytics — a full dashboard covering
+  scene-by-scene note density, stakeholder disagreement by source type, draft-to-draft
+  progress, plus 9 new analytical views (severity heatmap, category×severity matrix,
+  stakeholder influence map, conflict-type breakdown, conflict aging, draft progression,
+  revision risk score, expected scenes to revise, stakeholder alignment) and cross-project
+  benchmarks (headline stats, risk leaderboard, global category + conflict type distribution).
 - **Web UI (FastAPI)** — upload → agent runs → categorized notes, conflicts, checklist, analytics,
   plus **`.fdx` (Final Draft) export** of the revision notes.
 - **Google OAuth 2.0 sign-in** — the web app is gated by standard Google Identity
