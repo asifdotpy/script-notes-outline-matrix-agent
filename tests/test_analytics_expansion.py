@@ -49,7 +49,14 @@ _PROJECT_B = "test-stakeholder-friction"
 
 
 def _setup_chdb() -> None:
-    """One-time chDB init: wipe old data dir, init schema."""
+    """One-time chDB init: wipe old data dir, init schema.
+
+    IMPORTANT: re-set CHDB_DATA_PATH here (not just at module level) so this test
+    owns its own chDB instance regardless of module-load ordering. Other test modules
+    (e.g. suite E) also set CHDB_DATA_PATH at module level and may overwrite ours
+    before our module-level _setup_chdb() call runs.
+    """
+    os.environ["CHDB_DATA_PATH"] = CHDB_PATH
     shutil.rmtree(CHDB_PATH, ignore_errors=True)
     ch.init_schema()
 
