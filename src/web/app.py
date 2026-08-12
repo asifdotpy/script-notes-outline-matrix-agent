@@ -325,9 +325,10 @@ async def analyze(request: Request, file: UploadFile = File(...), title: str = F
             f"ORDER BY scene_number"
         )
         analytics = queries.project_analytics(project_id, 1)
+        benchmarks = queries.cross_project_benchmarks()
     except Exception as exc:
         print(f"Error querying analyzed project: {exc}")
-        notes, conflicts, analytics = [], [], {}
+        notes, conflicts, analytics, benchmarks = [], [], {}, {}
 
     checklist = build_checklist(notes, conflicts)
     projects = _get_projects()
@@ -343,6 +344,7 @@ async def analyze(request: Request, file: UploadFile = File(...), title: str = F
             "notes": notes,
             "conflicts": conflicts,
             "analytics": analytics,
+            "benchmarks": benchmarks,
             "checklist": checklist,
             "result": answer,
             "n_lines": len(raw_lines),
