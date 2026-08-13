@@ -515,13 +515,13 @@ def global_benchmarks() -> dict:
             total_reviewers,
             round(critical_notes / greatest(total_notes, 1), 3)                                          AS critical_ratio,
             round(scenes_with_conflicts / greatest(scenes_with_notes, 1), 3)                              AS conflict_rate,
-            round(min(total_notes / greatest(1, scenes_with_notes) / 10, 1), 3)                           AS notes_density_score,
-            round(min(total_reviewers / 10.0, 1), 3)                                                 AS stakeholder_fragility_score,
+            round(least(total_notes / greatest(1, scenes_with_notes) / 10, 1), 3)                           AS notes_density_score,
+            round(least(total_reviewers / 10.0, 1), 3)                                                 AS stakeholder_fragility_score,
             round(
                 40 * (critical_notes / greatest(total_notes, 1))
                 + 30 * (scenes_with_conflicts / greatest(scenes_with_notes, 1))
-                + 20 * min(total_notes / greatest(1, scenes_with_notes) / 10, 1)
-                + 10 * min(total_reviewers / 10.0, 1)
+                + 20 * least(total_notes / greatest(1, scenes_with_notes) / 10, 1)
+                + 10 * least(total_reviewers / 10.0, 1)
             , 1)                                                                                       AS risk_score
         FROM project_agg
         ORDER BY risk_score DESC
