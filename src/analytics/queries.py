@@ -514,7 +514,7 @@ def global_benchmarks() -> dict:
             ORDER BY total_notes DESC
         )
         SELECT
-            p.project_id,
+            p.project_id AS project_id,
             p.total_notes,
             p.critical_notes,
             coalesce(ns.scenes_with_notes, 0)                 AS scenes_with_notes,
