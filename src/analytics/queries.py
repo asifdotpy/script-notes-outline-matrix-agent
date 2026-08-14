@@ -482,49 +482,59 @@ def global_benchmarks() -> dict:
     global_conflict_rate = round(total_conflict_scenes / max(1, total_scenes_notes), 3) if total_scenes_notes else 0.0
 
     # Risk leaderboard — top 10 projects by risk score (reuse the risk formula per project)
-    # We compute risk per project for all projects. To avoid correlated-subquery
-    # overhead in chDB (which crashes the stdio subprocess with many projects), we
-    # pre-aggregate the conflicts table into a small CTE and join it once.
+    # We compute risk per project for all projects. To avoid a huge query, we limit to
+    # projects with at least 1 note.
+    # NOTE: chDB does not support correlated subqueries, so we pre-aggregate scenes
+    # in separate CTEs and LEFT JOIN instead.
     sql_leaderboard = """
-        WITH project_agg AS (
-            SELECT
-                project_id,
-                count(*)                                         AS total_notes,
-                countIf(severity = 'Critical')                   AS critical_notes,
-                count(DISTINCT scene_number)                     AS scenes_with_notes,
-                uniqExact(source_author)                         AS total_reviewers
+        WITH notes_scene_agg AS (
+            SELECT project_id, draft_version,
+                   count(DISTINCT scene_number) AS scenes_with_notes
             FROM script_notes_matrix.notes_raw
-            GROUP BY project_id
-            HAVING total_notes > 0
-            ORDER BY total_notes DESC
+            WHERE scene_number > 0
+            GROUP BY project_id, draft_version
         ),
-        conflict_agg AS (
-            SELECT
-                project_id,
-                count(DISTINCT scene_number) AS scenes_with_conflicts
+        conflicts_scene_agg AS (
+            SELECT project_id, draft_version,
+                   count(DISTINCT scene_number) AS scenes_with_conflicts
             FROM script_notes_matrix.notes_conflicts
             WHERE scene_number > 0
-            GROUP BY project_id
+            GROUP BY project_id, draft_version
+        ),
+        project_agg AS (
+            SELECT
+                n.project_id,
+                n.draft_version,
+                count(*)                                         AS total_notes,
+                countIf(severity = 'Critical')                   AS critical_notes,
+                uniqExact(source_author)                         AS total_reviewers
+            FROM script_notes_matrix.notes_raw n
+            GROUP BY n.project_id, n.draft_version
+            HAVING total_notes > 0
+            ORDER BY total_notes DESC
         )
         SELECT
-            p.project_id,
+            p.project_id AS project_id,
             p.total_notes,
             p.critical_notes,
-            p.scenes_with_notes,
-            coalesce(c.scenes_with_conflicts, 0)              AS scenes_with_conflicts,
+            coalesce(ns.scenes_with_notes, 0)                 AS scenes_with_notes,
+            coalesce(cs.scenes_with_conflicts, 0)             AS scenes_with_conflicts,
             p.total_reviewers,
-            round(p.critical_notes / if(p.total_notes > 1, p.total_notes, 1), 3)                                          AS critical_ratio,
-            round(coalesce(c.scenes_with_conflicts, 0) / if(p.scenes_with_notes > 1, p.scenes_with_notes, 1), 3)                 AS conflict_rate,
-            round(if(p.total_notes > 10 * if(p.scenes_with_notes > 1, p.scenes_with_notes, 1), 1.0, p.total_notes / if(p.scenes_with_notes > 1, p.scenes_with_notes, 1) / 10), 3) AS notes_density_score,
-            round(if(p.total_reviewers > 10.0, 1.0, p.total_reviewers / 10.0), 3)                                 AS stakeholder_fragility_score,
+            round(p.critical_notes / greatest(p.total_notes, 1), 3)                                          AS critical_ratio,
+            round(coalesce(cs.scenes_with_conflicts, 0) / greatest(coalesce(ns.scenes_with_notes, 0), 1), 3)   AS conflict_rate,
+            round(least(p.total_notes / greatest(1, coalesce(ns.scenes_with_notes, 0)) / 10, 1), 3)              AS notes_density_score,
+            round(least(p.total_reviewers / 10.0, 1), 3)                                                     AS stakeholder_fragility_score,
             round(
-                40 * (p.critical_notes / if(p.total_notes > 1, p.total_notes, 1))
-                + 30 * (coalesce(c.scenes_with_conflicts, 0) / if(p.scenes_with_notes > 1, p.scenes_with_notes, 1))
-                + 20 * if(p.total_notes > 10 * if(p.scenes_with_notes > 1, p.scenes_with_notes, 1), 1.0, p.total_notes / if(p.scenes_with_notes > 1, p.scenes_with_notes, 1) / 10)
-                + 10 * if(p.total_reviewers > 10.0, 1.0, p.total_reviewers / 10.0)
-            , 1)                                                                                       AS risk_score
+                40 * (p.critical_notes / greatest(p.total_notes, 1))
+                + 30 * (coalesce(cs.scenes_with_conflicts, 0) / greatest(coalesce(ns.scenes_with_notes, 0), 1))
+                + 20 * least(p.total_notes / greatest(1, coalesce(ns.scenes_with_notes, 0)) / 10, 1)
+                + 10 * least(p.total_reviewers / 10.0, 1)
+            , 1)                                                                                               AS risk_score
         FROM project_agg p
-        LEFT JOIN conflict_agg c ON p.project_id = c.project_id
+        LEFT JOIN notes_scene_agg ns
+            ON p.project_id = ns.project_id AND p.draft_version = ns.draft_version
+        LEFT JOIN conflicts_scene_agg cs
+            ON p.project_id = cs.project_id AND p.draft_version = cs.draft_version
         ORDER BY risk_score DESC
         LIMIT 10
     """

@@ -63,6 +63,9 @@ def _setup_chdb() -> None:
 
 def _safe_cleanup(project_id: str) -> None:
     """Delete a project's rows, tolerating missing tables/database."""
+    # Pin our own chDB path — another test module may have overwritten
+    # CHDB_DATA_PATH at module level (e.g. suite E).
+    os.environ["CHDB_DATA_PATH"] = CHDB_PATH
     pid = project_id.replace("'", "''")
     try:
         ch.run_query(f"ALTER TABLE script_notes_matrix.notes_raw DELETE WHERE project_id = '{pid}'")
@@ -84,6 +87,12 @@ _setup_chdb()
 
 def _seed_project(project_id: str, notes: list[dict], conflicts: list[dict] | None = None) -> None:
     """Insert notes + optional conflicts into chDB for a test project."""
+    # Pin our own CHDB_DATA_PATH so module-level imports from other test files
+    # (e.g. suite E) can't clobber it before we run. init_schema() is idempotent
+    # (CREATE TABLE IF NOT EXISTS), so re-calling it here is a no-op when the
+    # tables already exist in our instance.
+    os.environ["CHDB_DATA_PATH"] = CHDB_PATH
+    ch.init_schema()
     pid = project_id.replace("'", "''")
     for note in notes:
         ch.run_query(f"""
@@ -120,6 +129,9 @@ def _seed_project(project_id: str, notes: list[dict], conflicts: list[dict] | No
 
 def _safe_cleanup(project_id: str) -> None:
     """Delete a project's rows, tolerating missing tables/database."""
+    # Pin our own chDB path — another test module may have overwritten
+    # CHDB_DATA_PATH at module level (e.g. suite E).
+    os.environ["CHDB_DATA_PATH"] = CHDB_PATH
     pid = project_id.replace("'", "''")
     try:
         ch.run_query(f"ALTER TABLE script_notes_matrix.notes_raw DELETE WHERE project_id = '{pid}'")
