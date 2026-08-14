@@ -92,10 +92,19 @@ fix for Draft 2" list — with everything saved in a real database you can analy
 - **Runtime ClickHouse persistence** — `notes_raw` + `notes_conflicts` tables via the official
   `mcp-clickhouse` server, with relational analytics — a full dashboard covering
   scene-by-scene note density, stakeholder disagreement by source type, draft-to-draft
-  progress, plus 9 new analytical views (severity heatmap, category×severity matrix,
-  stakeholder influence map, conflict-type breakdown, conflict aging, draft progression,
-  revision risk score, expected scenes to revise, stakeholder alignment) and cross-project
-  benchmarks (headline stats, risk leaderboard, global category + conflict type distribution).
+  progress, plus 12 analytical views:
+  1. Severity Heatmap by Scene (stacked bar: Minor/Major/Critical per scene)
+  2. Category × Severity Matrix (grouped bar: which issue types are dangerous)
+  3. Stakeholder Influence Map (grouped bar: total vs critical notes per author)
+  4. Conflict Type Breakdown (doughnut: Structural/Character Arc/Tone/Unspecified)
+  5. Conflict Aging (bar: unresolved conflicts by age bucket)
+  6. Draft Progression (line: notes + conflicts across draft versions)
+  7. **Revision Risk Score** (0–100 composite KPI + gauge + component breakdown)
+  8. Expected Scenes to Revise (KPI cards: scenes with notes / conflicts / both)
+  9. Stakeholder Alignment (conflict rate + alignment ratio KPI cards)
+  10. Cross-Project Benchmarks (headline stats + highest-risk-projects leaderboard)
+  11. Global Category Distribution (doughnut across all projects)
+  12. Global Conflict Type Distribution (bar across all projects)
 - **Web UI (FastAPI)** — upload → agent runs → categorized notes, conflicts, checklist, analytics,
   plus **`.fdx` (Final Draft) export** of the revision notes.
 - **Google OAuth 2.0 sign-in** — the web app is gated by standard Google Identity
