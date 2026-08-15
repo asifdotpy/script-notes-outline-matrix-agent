@@ -255,6 +255,12 @@ async def auth_google_callback(request: Request):
 
     On failure: redirect to the frontend login page with an error message.
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"OAuth callback called. Query params: {dict(request.query_params)}")
+    logger.info(f"Session cookie present: {'session' in request.cookies}")
+    logger.info(f"Headers: {dict(request.headers)}")
+
     if not webauth._auth_enabled():
         return RedirectResponse(
             url=f"{os.getenv('FRONTEND_URL', '/dummy').rstrip('/')}/login?error=oauth_disabled",
@@ -265,6 +271,7 @@ async def auth_google_callback(request: Request):
     idt = token.get("id_token")
     if not idt:
         err = "No ID token returned from Google."
+        logger.error(f"OAuth callback error: {err}")
         return RedirectResponse(
             url=f"{os.getenv('FRONTEND_URL', '/dummy').rstrip('/')}/login?error={err}",
             status_code=303,
