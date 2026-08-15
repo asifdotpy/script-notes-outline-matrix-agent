@@ -107,7 +107,8 @@ def set_session(response: Response, email: str) -> None:
         _make_token(email),
         max_age=_MAX_AGE,
         httponly=True,
-        samesite="lax",
+        samesite="none",
+        secure=True,
         path="/",
     )
 

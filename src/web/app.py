@@ -86,6 +86,8 @@ app.add_middleware(
         or os.getenv("GOOGLE_OAUTH_CLIENT_SECRET")
         or "dev-insecure-session-secret"
     ),
+    same_site="none",
+    https_only=True,
 )
 
 
