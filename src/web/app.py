@@ -262,7 +262,7 @@ async def auth_google_callback(request: Request):
         )
 
     from google.oauth2 import id_token
-    from google.auth.transport.urllib3 import Request as GoogleRequest
+    from google.auth.transport.requests import Request as GoogleRequest
 
     try:
         claim = id_token.verify_oauth2_token(
