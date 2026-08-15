@@ -1,44 +1,62 @@
-# Python
+# --- Python ---
 __pycache__/
 *.py[cod]
-*.egg-info/
-.venv/
-venv/
-
-# Env / secrets
-.env
-.env.*
-!.env.example
-credentials.json
-*.key
-
-# Editor / OS
-.DS_Store
-.idea/
-.vscode/
-
-# Build
-__pycache__/
+*$py.class
 *.so
-*.log
-.pytest_cache/
+.Python
 build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 
-# Local data / uploads
-uploads/
-data/
-*.pdf
-*.eml
-# Keep the demo/test fixture (the report + run_agent_demo.py depend on it)
-!tests/sample_feedback.eml
+# --- Virtual environments ---
+venv/
+.venv/
+env/
+.env
 
-# Hermes local planning state (plans, project cache) — not submission code
-.hermes/
+# --- IDE ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
 
-# Hermes kanban task worktrees (Hermes-internal, not submission code)
-.worktrees/
+# --- OS ---
+.DS_Store
+Thumbs.db
 
-# Reference vendor repos (kept out of the submission)
-references/
+# --- Testing ---
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# --- mypy ---
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# --- Frontend ---
+frontend/.next/
+frontend/node_modules/
+frontend/.vercel/
+
+# --- Secrets (NEVER commit these) ---
+*.key.json
+sa-key.json
+*.pem
+*.p12
 .sa-key.json
-*.sa-key.json

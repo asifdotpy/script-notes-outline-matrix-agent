@@ -44,6 +44,15 @@ from src.web import auth as webauth  # noqa: E402
 
 app = FastAPI(title="Script Notes-to-Outline Matrix Agent API")
 
+
+@app.middleware("http")
+async def https_scheme(request: Request, call_next):
+    """Force https scheme for OAuth — Cloud Run terminates TLS and forwards as http."""
+    if request.headers.get("x-forwarded-proto") == "https":
+        request.scope["scheme"] = "https"
+    response = await call_next(request)
+    return response
+
 # ---------------------------------------------------------------------------
 # CORS — frontend on Vercel (*.vercel.app), backend on Cloud Run (*.run.app)
 # ---------------------------------------------------------------------------
